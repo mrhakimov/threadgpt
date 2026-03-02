@@ -1,0 +1,13 @@
+# Backend
+backend/.env
+backend/threadgpt
+
+# Frontend
+frontend/.env.local
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Misc
+.DS_Store
+*.tsbuildinfo
