@@ -1,25 +1,26 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { Session } from "@/types"
+import { useState, useEffect, useRef, KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
-import { Menu, Plus, MessageSquare, X } from "lucide-react"
-import { fetchSessions, createSession } from "@/lib/api"
+import { Menu, Plus, MessageSquare, X, Pencil, Trash2, Check } from "lucide-react"
+import { fetchSessions, renameSession, deleteSession } from "@/lib/api"
 
 interface Props {
   apiKey: string
   activeSessionId: string | null
   isCurrentEmpty?: boolean
   onSelectSession: (sessionId: string | null) => void
-  onSessionCreated: (session: Session) => void
 }
 
-export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmpty, onSelectSession, onSessionCreated }: Props) {
+export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmpty, onSelectSession }: Props) {
   const [open, setOpen] = useState(false)
   const [sessions, setSessions] = useState<Session[]>([])
-  const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState("")
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const editInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -30,11 +31,17 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
     function handleClickOutside(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpen(false)
+        setEditingId(null)
+        setConfirmDeleteId(null)
       }
     }
     if (open) document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [open])
+
+  useEffect(() => {
+    if (editingId) editInputRef.current?.focus()
+  }, [editingId])
 
   async function loadSessions() {
     try {
@@ -45,20 +52,54 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
     }
   }
 
-  async function handleNewConversation() {
+  function handleNewConversation() {
     if (isCurrentEmpty) return
-    setCreating(true)
-    setError(null)
+    onSelectSession(null)
+    setOpen(false)
+  }
+
+  function startEditing(s: Session, e: React.MouseEvent) {
+    e.stopPropagation()
+    setEditingId(s.session_id ?? null)
+    setEditingName(getSessionLabel(s))
+  }
+
+  async function commitRename(sessionId: string) {
+    const name = editingName.trim()
+    setEditingId(null)
+    if (!name) return
     try {
-      const session = await createSession(apiKey, "New conversation")
-      setSessions((prev) => [session, ...prev])
-      onSessionCreated(session)
-      onSelectSession(session.session_id ?? null)
-      setOpen(false)
+      await renameSession(sessionId, name)
+      setSessions((prev) =>
+        prev.map((s) => (s.session_id === sessionId ? { ...s, name } : s))
+      )
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  function handleEditKeyDown(e: KeyboardEvent<HTMLInputElement>, sessionId: string) {
+    if (e.key === "Enter") commitRename(sessionId)
+    else if (e.key === "Escape") setEditingId(null)
+  }
+
+  function handleDeleteClick(s: Session, e: React.MouseEvent) {
+    e.stopPropagation()
+    setConfirmDeleteId(s.session_id ?? null)
+  }
+
+  async function confirmDelete(sessionId: string) {
+    try {
+      await deleteSession(sessionId)
+      setSessions((prev) => prev.filter((x) => x.session_id !== sessionId))
+      if (activeSessionId === sessionId) {
+        onSelectSession(null)
+        setOpen(false)
+      }
     } catch (e) {
       setError(String(e))
     } finally {
-      setCreating(false)
+      setConfirmDeleteId(null)
     }
   }
 
@@ -94,7 +135,6 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
               size="sm"
               className="w-full justify-start gap-2 mb-2"
               onClick={handleNewConversation}
-              disabled={creating}
             >
               <Plus className="h-4 w-4" />
               New conversation
@@ -106,19 +146,79 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
                 <p className="text-xs text-muted-foreground text-center py-4">No conversations yet</p>
               )}
               {sessions.map((s) => (
-                <button
+                <div
                   key={s.session_id}
-                  className={`w-full text-left rounded-md px-3 py-2 text-sm flex items-start gap-2 hover:bg-muted transition-colors ${
+                  className={`group w-full text-left rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:bg-muted transition-colors ${
                     s.session_id === activeSessionId ? "bg-muted font-medium" : ""
                   }`}
-                  onClick={() => {
-                    onSelectSession(s.session_id ?? null)
-                    setOpen(false)
-                  }}
                 >
-                  <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{getSessionLabel(s)}</span>
-                </button>
+                  {editingId === s.session_id ? (
+                    <>
+                      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <input
+                        ref={editInputRef}
+                        className="flex-1 min-w-0 bg-transparent outline-none text-sm"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => handleEditKeyDown(e, s.session_id!)}
+                        onBlur={() => commitRename(s.session_id!)}
+                      />
+                      <button
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        onMouseDown={(e) => { e.preventDefault(); commitRename(s.session_id!) }}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="flex-1 min-w-0 flex items-start gap-2 text-left"
+                        onClick={() => {
+                          onSelectSession(s.session_id ?? null)
+                          setOpen(false)
+                        }}
+                      >
+                        <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{getSessionLabel(s)}</span>
+                      </button>
+                      {confirmDeleteId === s.session_id ? (
+                        <div className="shrink-0 flex items-center gap-1">
+                          <span className="text-xs text-muted-foreground">Delete?</span>
+                          <button
+                            className="px-1.5 py-0.5 rounded text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={(e) => { e.stopPropagation(); confirmDelete(s.session_id!) }}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            className="px-1.5 py-0.5 rounded text-xs hover:bg-accent text-muted-foreground"
+                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null) }}
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                            onClick={(e) => startEditing(s, e)}
+                            title="Rename"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent"
+                            onClick={(e) => handleDeleteClick(s, e)}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               ))}
             </div>
           </div>

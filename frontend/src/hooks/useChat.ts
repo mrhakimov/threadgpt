@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { Message, Session } from "@/types"
 import { initSession, fetchHistory, sendChatMessage } from "@/lib/api"
 
-export function useChat(apiKey: string, sessionId?: string, onSessionResolved?: (sessionId: string) => void) {
+// sessionId: string = load that session, null = blank new conversation, undefined = auto-detect latest
+export function useChat(apiKey: string, sessionId?: string | null, onSessionResolved?: (sessionId: string) => void) {
   const onSessionResolvedRef = useRef(onSessionResolved)
   onSessionResolvedRef.current = onSessionResolved
 
@@ -23,6 +24,13 @@ export function useChat(apiKey: string, sessionId?: string, onSessionResolved?: 
       try {
         setLoading(true)
         setMessages([])
+        setSession(null)
+
+        if (sessionId === null) {
+          // Explicit blank new conversation — don't load anything
+          setLoading(false)
+          return
+        }
 
         if (sessionId) {
           // Load a specific existing session
@@ -32,6 +40,7 @@ export function useChat(apiKey: string, sessionId?: string, onSessionResolved?: 
             setSession({ session_id: sessionId, is_new: false })
           }
         } else {
+          // undefined: auto-detect latest session
           const sessionData = await initSession(apiKey)
           if (cancelled) return
           setSession(sessionData)
@@ -73,12 +82,13 @@ export function useChat(apiKey: string, sessionId?: string, onSessionResolved?: 
     let accumulated = ""
 
     try {
+      const activeSessionId = sessionId || session?.session_id || undefined
       await sendChatMessage(apiKey, content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
-      }, session?.session_id || sessionId)
+      }, activeSessionId)
 
-      const history = await fetchHistory(apiKey, session?.session_id || sessionId)
+      const history = await fetchHistory(apiKey, activeSessionId)
       setMessages(history)
 
       if (session?.is_new || !session?.assistant_id) {

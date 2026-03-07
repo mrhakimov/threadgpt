@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import { Message, Session } from "@/types"
+import { Message } from "@/types"
 import { useChat } from "@/hooks/useChat"
 import MessageList from "./MessageList"
 import ChatInput from "./ChatInput"
@@ -13,14 +13,13 @@ import SettingsPage from "./SettingsPage"
 
 interface Props {
   apiKey: string
-  sessionId: string | null
+  sessionId: string | null | undefined
   onSelectSession: (sessionId: string | null) => void
-  onSessionCreated: (session: Session) => void
 }
 
-export default function ChatView({ apiKey, sessionId, onSelectSession, onSessionCreated }: Props) {
+export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) {
   const { messages, session, loading, sending, streamingContent, error, sendMessage } =
-    useChat(apiKey, sessionId ?? undefined, (resolvedId) => {
+    useChat(apiKey, sessionId, (resolvedId) => {
       if (!sessionId) onSelectSession(resolvedId)
     })
   const [threadParent, setThreadParent] = useState<Message | null>(null)
@@ -56,10 +55,9 @@ export default function ChatView({ apiKey, sessionId, onSelectSession, onSession
       <header className="shrink-0 border-b px-4 py-3 flex items-center gap-3">
         <ConversationMenu
           apiKey={apiKey}
-          activeSessionId={sessionId}
+          activeSessionId={sessionId ?? null}
           isCurrentEmpty={isEmpty}
           onSelectSession={onSelectSession}
-          onSessionCreated={onSessionCreated}
         />
         <h1 className="font-semibold">ThreadGPT</h1>
         {session?.system_prompt && (

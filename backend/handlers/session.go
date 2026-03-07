@@ -107,6 +107,39 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// HandleSessionByID handles PATCH (rename) and DELETE for a specific session ID
+func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Path[len("/api/sessions/"):]
+	if sessionID == "" {
+		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPatch:
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if err := db.RenameSession(sessionID, req.Name); err != nil {
+			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		if err := db.DeleteSession(sessionID); err != nil {
+			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // HandleSession handles the legacy single-session init (used by useChat on startup)
 func HandleSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

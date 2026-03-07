@@ -27,6 +27,22 @@ export async function createSession(apiKey: string, name: string) {
   return res.json()
 }
 
+export async function renameSession(sessionId: string, name: string) {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
+export async function deleteSession(sessionId: string) {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
 export async function fetchHistory(apiKey: string, sessionId?: string) {
   if (sessionId) {
     const res = await fetch(`${API_URL}/api/history?session_id=${sessionId}`)

@@ -17,7 +17,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			origin = "http://localhost:3000"
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
@@ -43,6 +43,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/session", corsMiddleware(handlers.HandleSession))
 	mux.HandleFunc("/api/sessions", corsMiddleware(handlers.HandleSessions))
+	mux.HandleFunc("/api/sessions/", corsMiddleware(handlers.HandleSessionByID))
 	mux.HandleFunc("/api/history", corsMiddleware(handlers.HandleHistory))
 	mux.HandleFunc("/api/chat", corsMiddleware(handlers.HandleChat))
 	mux.HandleFunc("/api/thread", corsMiddleware(handlers.HandleThread))

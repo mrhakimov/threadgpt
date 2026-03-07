@@ -201,6 +201,14 @@ func GetThreadMessages(parentMessageID string) ([]Message, error) {
 	return messages, err
 }
 
+func DeleteSession(sessionID string) error {
+	// Delete messages first (cascade)
+	if err := doRequest("DELETE", "messages?session_id=eq."+sessionID, nil, nil); err != nil {
+		return err
+	}
+	return doRequest("DELETE", "sessions?id=eq."+sessionID, nil, nil)
+}
+
 func GetMessageByID(messageID string) (*Message, error) {
 	var messages []Message
 	err := doRequest("GET", "messages?id=eq."+messageID+"&limit=1", nil, &messages)
