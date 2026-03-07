@@ -59,15 +59,16 @@ export async function sendChatMessage(
   apiKey: string,
   userMessage: string,
   onChunk: (chunk: string) => void,
-  sessionId?: string
-): Promise<void> {
+  sessionId?: string,
+  forceNew?: boolean
+): Promise<string | undefined> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey, user_message: userMessage, session_id: sessionId ?? "" }),
+    body: JSON.stringify({ api_key: apiKey, user_message: userMessage, session_id: sessionId ?? "", force_new: forceNew ?? false }),
   })
   if (!res.ok) throw new Error(await res.text())
-  await consumeStream(res, onChunk)
+  return consumeStream(res, onChunk)
 }
 
 export async function sendThreadMessage(
@@ -89,11 +90,12 @@ export async function sendThreadMessage(
   await consumeStream(res, onChunk)
 }
 
-async function consumeStream(res: Response, onChunk: (chunk: string) => void) {
+async function consumeStream(res: Response, onChunk: (chunk: string) => void): Promise<string | undefined> {
   if (!res.body) return
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
+  let resolvedSessionId: string | undefined
 
   while (true) {
     const { done, value } = await reader.read()
@@ -106,15 +108,17 @@ async function consumeStream(res: Response, onChunk: (chunk: string) => void) {
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue
       const data = line.slice(6).trim()
-      if (data === "[DONE]") return
+      if (data === "[DONE]") return resolvedSessionId
       try {
         const parsed = JSON.parse(data)
+        if (parsed.session_id) resolvedSessionId = parsed.session_id
         if (parsed.chunk) onChunk(parsed.chunk)
       } catch {
         // ignore parse errors
       }
     }
   }
+  return resolvedSessionId
 }
 
 export async function sha256(text: string): Promise<string> {

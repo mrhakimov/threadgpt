@@ -82,19 +82,24 @@ export function useChat(apiKey: string, sessionId?: string | null, onSessionReso
     let accumulated = ""
 
     try {
-      const activeSessionId = sessionId || session?.session_id || undefined
-      await sendChatMessage(apiKey, content, (chunk) => {
+      const forceNew = sessionId === null
+      const activeSessionId = forceNew ? undefined : (sessionId || session?.session_id || undefined)
+      const streamedSessionId = await sendChatMessage(apiKey, content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
-      }, activeSessionId)
+      }, activeSessionId, forceNew)
 
-      const history = await fetchHistory(apiKey, activeSessionId)
+      // Use the session ID returned from the stream; fall back to activeSessionId
+      const resolvedSessionId = streamedSessionId ?? activeSessionId
+      const history = await fetchHistory(apiKey, resolvedSessionId)
       setMessages(history)
 
-      if (session?.is_new || !session?.assistant_id) {
+      if (resolvedSessionId && resolvedSessionId !== (sessionId || session?.session_id)) {
+        setSession({ session_id: resolvedSessionId, is_new: false })
+        onSessionResolvedRef.current?.(resolvedSessionId)
+      } else if (!session?.assistant_id) {
         const sessionData = await initSession(apiKey)
         setSession(sessionData)
-        if (sessionData.session_id && !sessionId) onSessionResolvedRef.current?.(sessionData.session_id)
       }
     } catch (e) {
       setError(String(e))

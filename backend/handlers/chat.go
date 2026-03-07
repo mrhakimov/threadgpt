@@ -11,6 +11,7 @@ type ChatRequest struct {
 	APIKey      string `json:"api_key"`
 	UserMessage string `json:"user_message"`
 	SessionID   string `json:"session_id"`
+	ForceNew    bool   `json:"force_new"`
 }
 
 func HandleChat(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +28,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	hash := hashAPIKey(req.APIKey)
 
-	// Look up session: by explicit ID or fall back to most recent
+	// Look up session: by explicit ID, or fall back to most recent (unless force_new)
 	var session *db.Session
 	var err error
 	if req.SessionID != "" {
@@ -41,7 +42,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unauthorized", http.StatusForbidden)
 			return
 		}
-	} else {
+	} else if !req.ForceNew {
 		session, err = db.GetSession(hash)
 		if err != nil {
 			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
@@ -91,6 +92,9 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
+		sessionJSON, _ := json.Marshal(map[string]string{"session_id": session.ID})
+		w.Write([]byte("data: " + string(sessionJSON) + "\n\n"))
+
 		confirmMsg := "Context set! Your assistant has been configured with this as its instructions. Send your next message to start chatting."
 		chunkJSON, _ := json.Marshal(map[string]string{"chunk": confirmMsg})
 		w.Write([]byte("data: " + string(chunkJSON) + "\n\n"))
@@ -121,7 +125,18 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stream the response
+	// Stream the response (session_id is emitted first by RunAndStream preamble via w)
+	// Emit session_id before streaming so frontend can track which session this is
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	sessionJSON, _ := json.Marshal(map[string]string{"session_id": session.ID})
+	w.Write([]byte("data: " + string(sessionJSON) + "\n\n"))
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
 	assistantText, err := openai.RunAndStream(req.APIKey, threadID, *session.AssistantID, w)
 	if err != nil {
 		// Headers already sent if streaming started, just log

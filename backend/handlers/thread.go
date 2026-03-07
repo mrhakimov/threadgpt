@@ -26,9 +26,24 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hash := hashAPIKey(req.APIKey)
-	session, err := db.GetSession(hash)
+
+	// Look up the parent message to get its session
+	parentMsg, err := db.GetMessageByID(req.ParentMessageID)
+	if err != nil || parentMsg == nil {
+		http.Error(w, "parent message not found", http.StatusBadRequest)
+		return
+	}
+
+	// Load session from the parent message's session_id
+	session, err := db.GetSessionByID(parentMsg.SessionID)
 	if err != nil || session == nil || session.AssistantID == nil {
 		http.Error(w, "session not found", http.StatusBadRequest)
+		return
+	}
+
+	// Verify session belongs to this user
+	if session.APIKeyHash != hash {
+		http.Error(w, "unauthorized", http.StatusForbidden)
 		return
 	}
 
@@ -43,12 +58,6 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 
 	if len(existing) == 0 {
 		// First reply: create a new thread starting with the parent message as context
-		parentMsg, err := db.GetMessageByID(req.ParentMessageID)
-		if err != nil || parentMsg == nil {
-			http.Error(w, "parent message not found", http.StatusBadRequest)
-			return
-		}
-
 		threadID, err = openai.CreateThread(req.APIKey)
 		if err != nil {
 			http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
