@@ -1,10 +1,13 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Message, Session } from "@/types"
 import { initSession, fetchHistory, sendChatMessage } from "@/lib/api"
 
-export function useChat(apiKey: string) {
+export function useChat(apiKey: string, sessionId?: string, onSessionResolved?: (sessionId: string) => void) {
+  const onSessionResolvedRef = useRef(onSessionResolved)
+  onSessionResolvedRef.current = onSessionResolved
+
   const [messages, setMessages] = useState<Message[]>([])
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
@@ -19,13 +22,27 @@ export function useChat(apiKey: string) {
     async function init() {
       try {
         setLoading(true)
-        const sessionData = await initSession(apiKey)
-        if (cancelled) return
-        setSession(sessionData)
+        setMessages([])
 
-        if (!sessionData.is_new) {
-          const history = await fetchHistory(apiKey)
-          if (!cancelled) setMessages(history)
+        if (sessionId) {
+          // Load a specific existing session
+          const history = await fetchHistory(apiKey, sessionId)
+          if (!cancelled) {
+            setMessages(history)
+            setSession({ session_id: sessionId, is_new: false })
+          }
+        } else {
+          const sessionData = await initSession(apiKey)
+          if (cancelled) return
+          setSession(sessionData)
+
+          if (!sessionData.is_new) {
+            const history = await fetchHistory(apiKey)
+            if (!cancelled) {
+              setMessages(history)
+              if (sessionData.session_id) onSessionResolvedRef.current?.(sessionData.session_id)
+            }
+          }
         }
       } catch (e) {
         if (!cancelled) setError(String(e))
@@ -36,7 +53,7 @@ export function useChat(apiKey: string) {
 
     init()
     return () => { cancelled = true }
-  }, [apiKey])
+  }, [apiKey, sessionId])
 
   const sendMessage = useCallback(async (content: string) => {
     if (sending) return
@@ -59,17 +76,15 @@ export function useChat(apiKey: string) {
       await sendChatMessage(apiKey, content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
-      })
+      }, session?.session_id || sessionId)
 
-      // Reload history from Supabase to get real DB-persisted IDs
-      // (needed so Reply uses the real message ID, not a client-generated UUID)
-      const history = await fetchHistory(apiKey)
+      const history = await fetchHistory(apiKey, session?.session_id || sessionId)
       setMessages(history)
 
-      // Update session if this was the first message (assistant now exists)
       if (session?.is_new || !session?.assistant_id) {
         const sessionData = await initSession(apiKey)
         setSession(sessionData)
+        if (sessionData.session_id && !sessionId) onSessionResolvedRef.current?.(sessionData.session_id)
       }
     } catch (e) {
       setError(String(e))
@@ -77,7 +92,7 @@ export function useChat(apiKey: string) {
       setStreamingContent("")
       setSending(false)
     }
-  }, [apiKey, sending, session])
+  }, [apiKey, sending, session, sessionId])
 
   return { messages, session, loading, sending, streamingContent, error, sendMessage }
 }

@@ -12,12 +12,24 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If session_id provided directly, use it
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID != "" {
+		messages, err := db.GetMessages(sessionID)
+		if err != nil {
+			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(messages)
+		return
+	}
+
 	apiKeyHash := r.URL.Query().Get("api_key_hash")
 	if apiKeyHash == "" {
-		// Also support sending raw api_key
 		apiKey := r.URL.Query().Get("api_key")
 		if apiKey == "" {
-			http.Error(w, "api_key_hash or api_key required", http.StatusBadRequest)
+			http.Error(w, "session_id or api_key_hash required", http.StatusBadRequest)
 			return
 		}
 		apiKeyHash = hashAPIKey(apiKey)

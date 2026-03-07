@@ -42,6 +42,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/session", corsMiddleware(handlers.HandleSession))
+	mux.HandleFunc("/api/sessions", corsMiddleware(handlers.HandleSessions))
 	mux.HandleFunc("/api/history", corsMiddleware(handlers.HandleHistory))
 	mux.HandleFunc("/api/chat", corsMiddleware(handlers.HandleChat))
 	mux.HandleFunc("/api/thread", corsMiddleware(handlers.HandleThread))

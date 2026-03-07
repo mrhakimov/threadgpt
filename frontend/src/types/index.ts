@@ -12,5 +12,7 @@ export interface Session {
   session_id?: string
   assistant_id?: string
   system_prompt?: string
+  name?: string
   is_new?: boolean
+  created_at?: string
 }

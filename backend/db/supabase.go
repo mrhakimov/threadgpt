@@ -15,6 +15,7 @@ type Session struct {
 	APIKeyHash   string  `json:"api_key_hash"`
 	AssistantID  *string `json:"assistant_id"`
 	SystemPrompt *string `json:"system_prompt"`
+	Name         *string `json:"name"`
 	CreatedAt    string  `json:"created_at"`
 }
 
@@ -89,7 +90,7 @@ func doRequest(method, path string, body any, result any) error {
 
 func GetSession(apiKeyHash string) (*Session, error) {
 	var sessions []Session
-	err := doRequest("GET", "sessions?api_key_hash=eq."+apiKeyHash+"&limit=1", nil, &sessions)
+	err := doRequest("GET", "sessions?api_key_hash=eq."+apiKeyHash+"&order=created_at.desc&limit=1", nil, &sessions)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +98,24 @@ func GetSession(apiKeyHash string) (*Session, error) {
 		return nil, nil
 	}
 	return &sessions[0], nil
+}
+
+func GetSessionByID(sessionID string) (*Session, error) {
+	var sessions []Session
+	err := doRequest("GET", "sessions?id=eq."+sessionID+"&limit=1", nil, &sessions)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) == 0 {
+		return nil, nil
+	}
+	return &sessions[0], nil
+}
+
+func GetSessions(apiKeyHash string) ([]Session, error) {
+	var sessions []Session
+	err := doRequest("GET", "sessions?api_key_hash=eq."+apiKeyHash+"&order=created_at.desc", nil, &sessions)
+	return sessions, err
 }
 
 func CreateSession(apiKeyHash, systemPrompt string) (*Session, error) {
@@ -113,6 +132,32 @@ func CreateSession(apiKeyHash, systemPrompt string) (*Session, error) {
 		return nil, fmt.Errorf("no session returned")
 	}
 	return &sessions[0], nil
+}
+
+func CreateNamedSession(apiKeyHash, name string) (*Session, error) {
+	payload := map[string]string{
+		"api_key_hash": apiKeyHash,
+		"name":         name,
+	}
+	var sessions []Session
+	err := doRequest("POST", "sessions", payload, &sessions)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessions) == 0 {
+		return nil, fmt.Errorf("no session returned")
+	}
+	return &sessions[0], nil
+}
+
+func RenameSession(sessionID, name string) error {
+	payload := map[string]string{"name": name}
+	return doRequest("PATCH", "sessions?id=eq."+sessionID, payload, nil)
+}
+
+func SetSystemPrompt(sessionID, systemPrompt string) error {
+	payload := map[string]string{"system_prompt": systemPrompt}
+	return doRequest("PATCH", "sessions?id=eq."+sessionID, payload, nil)
 }
 
 func UpdateSessionAssistant(sessionID, assistantID string) error {

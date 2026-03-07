@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { Message } from "@/types"
 import { Button } from "@/components/ui/button"
 import { MessageSquare } from "lucide-react"
@@ -13,14 +12,11 @@ interface Props {
 }
 
 export default function MessageBubble({ message, streaming, onReply }: Props) {
-  const [hovered, setHovered] = useState(false)
   const isAssistant = message.role === "assistant"
 
   return (
     <div
       className={cn("flex w-full", isAssistant ? "justify-start" : "justify-end")}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       <div className={cn("group relative max-w-[80%]", isAssistant ? "items-start" : "items-end")}>
         <div
@@ -37,7 +33,7 @@ export default function MessageBubble({ message, streaming, onReply }: Props) {
           )}
         </div>
 
-        {isAssistant && onReply && hovered && !streaming && (
+        {isAssistant && onReply && !streaming && (
           <Button
             variant="ghost"
             size="sm"

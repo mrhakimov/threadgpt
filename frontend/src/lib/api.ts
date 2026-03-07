@@ -10,7 +10,29 @@ export async function initSession(apiKey: string) {
   return res.json()
 }
 
-export async function fetchHistory(apiKey: string) {
+export async function fetchSessions(apiKey: string) {
+  const hash = await sha256(apiKey)
+  const res = await fetch(`${API_URL}/api/sessions?api_key_hash=${hash}`)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function createSession(apiKey: string, name: string) {
+  const res = await fetch(`${API_URL}/api/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: apiKey, name }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function fetchHistory(apiKey: string, sessionId?: string) {
+  if (sessionId) {
+    const res = await fetch(`${API_URL}/api/history?session_id=${sessionId}`)
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  }
   const hash = await sha256(apiKey)
   const res = await fetch(`${API_URL}/api/history?api_key_hash=${hash}`)
   if (!res.ok) throw new Error(await res.text())
@@ -20,12 +42,13 @@ export async function fetchHistory(apiKey: string) {
 export async function sendChatMessage(
   apiKey: string,
   userMessage: string,
-  onChunk: (chunk: string) => void
+  onChunk: (chunk: string) => void,
+  sessionId?: string
 ): Promise<void> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey, user_message: userMessage }),
+    body: JSON.stringify({ api_key: apiKey, user_message: userMessage, session_id: sessionId ?? "" }),
   })
   if (!res.ok) throw new Error(await res.text())
   await consumeStream(res, onChunk)
@@ -78,7 +101,7 @@ async function consumeStream(res: Response, onChunk: (chunk: string) => void) {
   }
 }
 
-async function sha256(text: string): Promise<string> {
+export async function sha256(text: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(text)
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer)
   const hashArray = Array.from(new Uint8Array(hashBuffer))

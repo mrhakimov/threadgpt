@@ -1,0 +1,6 @@
+- support multiple threads
+- reply button is misplaced
+- scroll to bottom button
+- scaffolding for logo
+- scaffolding for input
+- stateless feature-requests using telegram as a storage

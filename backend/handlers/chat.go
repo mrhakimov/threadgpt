@@ -10,6 +10,7 @@ import (
 type ChatRequest struct {
 	APIKey      string `json:"api_key"`
 	UserMessage string `json:"user_message"`
+	SessionID   string `json:"session_id"`
 }
 
 func HandleChat(w http.ResponseWriter, r *http.Request) {
@@ -26,25 +27,48 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	hash := hashAPIKey(req.APIKey)
 
-	// Look up or create session
-	session, err := db.GetSession(hash)
-	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
-		return
+	// Look up session: by explicit ID or fall back to most recent
+	var session *db.Session
+	var err error
+	if req.SessionID != "" {
+		session, err = db.GetSessionByID(req.SessionID)
+		if err != nil {
+			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Verify session belongs to this user
+		if session != nil && session.APIKeyHash != hash {
+			http.Error(w, "unauthorized", http.StatusForbidden)
+			return
+		}
+	} else {
+		session, err = db.GetSession(hash)
+		if err != nil {
+			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
-	if session == nil {
-		// First message: create Assistant + session
+	if session == nil || session.AssistantID == nil {
+		// First message: create Assistant and bind to session
 		assistantID, err := openai.CreateAssistant(req.APIKey, req.UserMessage)
 		if err != nil {
 			http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		session, err = db.CreateSession(hash, req.UserMessage)
-		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
-			return
+		if session == nil {
+			session, err = db.CreateSession(hash, req.UserMessage)
+			if err != nil {
+				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			// Named session exists but has no assistant yet — set system prompt
+			if err := db.SetSystemPrompt(session.ID, req.UserMessage); err != nil {
+				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
 		err = db.UpdateSessionAssistant(session.ID, assistantID)
@@ -76,12 +100,6 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		}
 
 		db.SaveMessage(session.ID, "assistant", confirmMsg, nil, nil)
-		return
-	}
-
-	// Session exists — create a new OpenAI Thread for this message
-	if session.AssistantID == nil {
-		http.Error(w, "session has no assistant", http.StatusInternalServerError)
 		return
 	}
 
