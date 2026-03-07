@@ -9,9 +9,10 @@ interface Props {
   onSend: (message: string) => void
   disabled?: boolean
   placeholder?: string
+  focusTrigger?: number
 }
 
-export default function ChatInput({ onSend, disabled, placeholder }: Props) {
+export default function ChatInput({ onSend, disabled, placeholder, focusTrigger }: Props) {
   const [value, setValue] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -21,6 +22,10 @@ export default function ChatInput({ onSend, disabled, placeholder }: Props) {
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + "px"
     }
   }, [value])
+
+  useEffect(() => {
+    if (focusTrigger) textareaRef.current?.focus()
+  }, [focusTrigger])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {

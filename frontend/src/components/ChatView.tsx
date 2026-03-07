@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { Message } from "@/types"
 import { useChat } from "@/hooks/useChat"
 import MessageList from "./MessageList"
@@ -25,7 +25,12 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
   const [threadParent, setThreadParent] = useState<Message | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [focusTrigger, setFocusTrigger] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (sessionId === null) setFocusTrigger((n) => n + 1)
+  }, [sessionId])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -33,6 +38,13 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     setShowScrollBtn(distFromBottom > 100)
   }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setShowScrollBtn(distFromBottom > 100)
+  }, [messages, streamingContent])
 
   const scrollToBottom = useCallback(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
@@ -121,6 +133,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
           <ChatInput
             onSend={sendMessage}
             disabled={sending}
+            focusTrigger={focusTrigger}
             placeholder={
               isFirstMessage
                 ? "Set the context for your conversation..."
