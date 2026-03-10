@@ -10,9 +10,10 @@ interface Props {
   activeSessionId: string | null
   isCurrentEmpty?: boolean
   onSelectSession: (sessionId: string | null) => void
+  onRenameActive?: (name: string) => void
 }
 
-export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmpty, onSelectSession }: Props) {
+export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmpty, onSelectSession, onRenameActive }: Props) {
   const [open, setOpen] = useState(false)
   const [sessions, setSessions] = useState<Session[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -73,6 +74,7 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
       setSessions((prev) =>
         prev.map((s) => (s.session_id === sessionId ? { ...s, name } : s))
       )
+      if (sessionId === activeSessionId) onRenameActive?.(name)
     } catch (e) {
       setError(String(e))
     }

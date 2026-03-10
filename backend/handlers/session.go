@@ -107,7 +107,7 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// HandleSessionByID handles PATCH (rename) and DELETE for a specific session ID
+// HandleSessionByID handles GET (fetch), PATCH (rename) and DELETE for a specific session ID
 func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Path[len("/api/sessions/"):]
 	if sessionID == "" {
@@ -116,6 +116,24 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
+	case http.MethodGet:
+		session, err := db.GetSessionByID(sessionID)
+		if err != nil {
+			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if session == nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		resp := SessionResponse{
+			SessionID:    session.ID,
+			AssistantID:  session.AssistantID,
+			SystemPrompt: session.SystemPrompt,
+			Name:         session.Name,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
 	case http.MethodPatch:
 		var req struct {
 			Name string `json:"name"`

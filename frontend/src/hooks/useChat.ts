@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Message, Session } from "@/types"
-import { initSession, fetchHistory, sendChatMessage } from "@/lib/api"
+import { initSession, fetchHistory, fetchSession, sendChatMessage } from "@/lib/api"
 
 // sessionId: string = load that session, null = blank new conversation, undefined = auto-detect latest
 export function useChat(apiKey: string, sessionId?: string | null, onSessionResolved?: (sessionId: string) => void) {
@@ -34,10 +34,13 @@ export function useChat(apiKey: string, sessionId?: string | null, onSessionReso
 
         if (sessionId) {
           // Load a specific existing session
-          const history = await fetchHistory(apiKey, sessionId)
+          const [history, sessionData] = await Promise.all([
+            fetchHistory(apiKey, sessionId),
+            fetchSession(sessionId),
+          ])
           if (!cancelled) {
             setMessages(history)
-            setSession({ session_id: sessionId, is_new: false })
+            setSession({ session_id: sessionId, is_new: false, name: sessionData.name, system_prompt: sessionData.system_prompt })
           }
         } else {
           // undefined: auto-detect latest session

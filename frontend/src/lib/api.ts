@@ -10,6 +10,12 @@ export async function initSession(apiKey: string) {
   return res.json()
 }
 
+export async function fetchSession(sessionId: string) {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}`)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function fetchSessions(apiKey: string) {
   const hash = await sha256(apiKey)
   const res = await fetch(`${API_URL}/api/sessions?api_key_hash=${hash}`)

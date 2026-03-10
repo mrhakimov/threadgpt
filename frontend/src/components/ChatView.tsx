@@ -26,10 +26,12 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [focusTrigger, setFocusTrigger] = useState(0)
+  const [overrideName, setOverrideName] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (sessionId === null) setFocusTrigger((n) => n + 1)
+    setOverrideName(null)
   }, [sessionId])
 
   const handleScroll = useCallback(() => {
@@ -70,11 +72,12 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
           activeSessionId={sessionId ?? null}
           isCurrentEmpty={isEmpty}
           onSelectSession={onSelectSession}
+          onRenameActive={(name) => setOverrideName(name)}
         />
         <h1 className="font-semibold">ThreadGPT</h1>
-        {session?.system_prompt && (
+        {(overrideName || session?.name || session?.system_prompt) && (
           <span className="text-xs text-muted-foreground truncate max-w-xs">
-            {session.system_prompt}
+            {overrideName ?? (session!.name && session!.name !== "New conversation" ? session!.name : session!.system_prompt)}
           </span>
         )}
         <div className="ml-auto">
@@ -114,8 +117,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10">
           <Button
             size="sm"
-            variant="secondary"
-            className="rounded-full shadow-md h-8 px-3 gap-1 text-xs"
+            className="rounded-full shadow-lg h-8 px-3 gap-1 text-xs bg-background text-foreground border border-border hover:bg-muted"
             onClick={scrollToBottom}
           >
             <ChevronDown className="h-3.5 w-3.5" />
