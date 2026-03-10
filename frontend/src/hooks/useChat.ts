@@ -96,6 +96,7 @@ export function useChat(apiKey: string, sessionId?: string | null, onSessionReso
       const resolvedSessionId = streamedSessionId ?? activeSessionId
       const history = await fetchHistory(apiKey, resolvedSessionId)
       setMessages(history)
+      setStreamingContent("")
 
       if (resolvedSessionId && resolvedSessionId !== (sessionId || session?.session_id)) {
         setSession({ session_id: resolvedSessionId, is_new: false })
@@ -106,8 +107,8 @@ export function useChat(apiKey: string, sessionId?: string | null, onSessionReso
       }
     } catch (e) {
       setError(String(e))
-    } finally {
       setStreamingContent("")
+    } finally {
       setSending(false)
     }
   }, [apiKey, sending, session, sessionId])
