@@ -24,8 +24,8 @@ export default function MessageList({ messages, streamingContent, onReply, scrol
 
   return (
     <div className="flex flex-col gap-4 py-4">
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} onReply={onReply} />
+      {messages.map((msg, i) => (
+        <MessageBubble key={msg.id} message={msg} onReply={onReply} isSystemPrompt={i === 0 && msg.role === "user"} />
       ))}
 
       {streamingContent && (
