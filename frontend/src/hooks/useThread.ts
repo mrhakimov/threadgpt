@@ -41,10 +41,11 @@ export function useThread(apiKey: string, parentMessageId: string) {
         created_at: new Date().toISOString(),
       }
       setMessages((prev) => [...prev, assistantMsg])
+      setStreamingContent("")
     } catch (e) {
       setError(String(e))
-    } finally {
       setStreamingContent("")
+    } finally {
       setSending(false)
     }
   }, [apiKey, parentMessageId, sending])
