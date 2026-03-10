@@ -30,7 +30,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (sessionId === null) setFocusTrigger((n) => n + 1)
+    setFocusTrigger((n) => n + 1)
     setOverrideName(null)
   }, [sessionId])
 
@@ -76,9 +76,15 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
         />
         <h1 className="font-semibold">ThreadGPT</h1>
         {(overrideName || session?.name || session?.system_prompt) && (
-          <span className="text-xs text-muted-foreground truncate max-w-xs">
+          <button
+            onClick={() => {
+              scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+              setFocusTrigger((n) => n + 1)
+            }}
+            className="text-xs text-muted-foreground truncate max-w-xs hover:text-foreground transition-colors"
+          >
             {overrideName ?? (session!.name && session!.name !== "New conversation" ? session!.name : session!.system_prompt)}
-          </span>
+          </button>
         )}
         <div className="ml-auto">
           <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)}>
