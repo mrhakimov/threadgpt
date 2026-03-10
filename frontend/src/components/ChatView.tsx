@@ -50,6 +50,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
 
   const scrollToBottom = useCallback(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
+    setFocusTrigger((n) => n + 1)
   }, [])
 
   if (loading) {
