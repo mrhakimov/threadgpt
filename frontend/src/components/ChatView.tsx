@@ -102,7 +102,18 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
               {overrideName ?? (session!.name && session!.name !== "New conversation" ? session!.name : session!.system_prompt)}
             </button>
           )}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <a
+              href="https://x.com/omtiness"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+              aria-label="X (Twitter)"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L2.25 2.25h6.902l4.263 5.634zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
+            </a>
             <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)}>
               <Settings className="h-4 w-4" />
             </Button>

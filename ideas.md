@@ -1,7 +1,5 @@
 - stateless feature-requests using telegram as a storage
 - pagination for sub-threads
-- double input borders
-- preserve sidebar state on refreshing the page
 - sub-threads redesign
 - settings redesign
 - do not store messages in db
