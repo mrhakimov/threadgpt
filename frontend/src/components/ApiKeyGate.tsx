@@ -6,16 +6,27 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
 interface Props {
-  onSubmit: (apiKey: string) => void
+  onSubmit: (apiKey: string) => Promise<void>
 }
 
 export default function ApiKeyGate({ onSubmit }: Props) {
   const [value, setValue] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const trimmed = value.trim()
-    if (trimmed) onSubmit(trimmed)
+    if (!trimmed) return
+    setLoading(true)
+    setError(null)
+    try {
+      await onSubmit(trimmed)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -37,8 +48,9 @@ export default function ApiKeyGate({ onSubmit }: Props) {
               onChange={(e) => setValue(e.target.value)}
               autoFocus
             />
-            <Button type="submit" disabled={!value.trim()}>
-              Continue
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <Button type="submit" disabled={!value.trim() || loading}>
+              {loading ? "Connecting..." : "Continue"}
             </Button>
           </form>
         </CardContent>

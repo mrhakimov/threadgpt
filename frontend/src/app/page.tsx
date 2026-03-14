@@ -3,27 +3,31 @@
 import { useState, useEffect } from "react"
 import ApiKeyGate from "@/components/ApiKeyGate"
 import ChatView from "@/components/ChatView"
+import { auth } from "@/lib/api"
 
-const STORAGE_KEY = "threadgpt_api_key"
+const STORAGE_KEY = "threadgpt_token"
 const SESSION_KEY = "threadgpt_session_id"
 
 export default function Home() {
-  const [apiKey, setApiKey] = useState<string | null>(null)
+  const [token, setToken] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null | undefined>(undefined)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) setApiKey(stored)
+    if (stored) setToken(stored)
     const storedSession = localStorage.getItem(SESSION_KEY)
     // undefined = auto-detect latest; null = blank new; string = specific session
     setSessionId(storedSession ?? undefined)
     setMounted(true)
   }, [])
 
-  function handleApiKey(key: string) {
-    localStorage.setItem(STORAGE_KEY, key)
-    setApiKey(key)
+  async function handleApiKey(key: string) {
+    const { token: newToken } = await auth(key)
+    localStorage.setItem(STORAGE_KEY, newToken)
+    localStorage.removeItem(SESSION_KEY)
+    setSessionId(undefined)
+    setToken(newToken)
   }
 
   function handleSelectSession(id: string | null) {
@@ -36,17 +40,23 @@ export default function Home() {
     }
   }
 
+  function handleUnauthorized() {
+    localStorage.removeItem(STORAGE_KEY)
+    setToken(null)
+  }
+
   if (!mounted) return null
 
-  if (!apiKey) {
+  if (!token) {
     return <ApiKeyGate onSubmit={handleApiKey} />
   }
 
   return (
     <ChatView
-      apiKey={apiKey}
+      token={token}
       sessionId={sessionId}
       onSelectSession={handleSelectSession}
+      onUnauthorized={handleUnauthorized}
     />
   )
 }

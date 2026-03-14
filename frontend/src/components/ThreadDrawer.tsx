@@ -9,14 +9,14 @@ import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
 
 interface Props {
-  apiKey: string
+  token: string
   parentMessage: Message
   onClose: () => void
 }
 
-export default function ThreadDrawer({ apiKey, parentMessage, onClose }: Props) {
+export default function ThreadDrawer({ token, parentMessage, onClose }: Props) {
   const { messages, sending, streamingContent, error, sendMessage } = useThread(
-    apiKey,
+    token,
     parentMessage.id
   )
   const drawerRef = useRef<HTMLDivElement>(null)

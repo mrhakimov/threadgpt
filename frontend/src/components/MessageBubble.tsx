@@ -19,7 +19,12 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
   const [showTooltip, setShowTooltip] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(message.content)
+
+  useEffect(() => {
+    if (!editing) setEditValue(message.content)
+  }, [message.content, editing])
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const tooltipRef = useRef<HTMLSpanElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -47,9 +52,12 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
       return
     }
     setSaving(true)
+    setSaveError(null)
     try {
       await onEditSystemPrompt(editValue.trim())
       setEditing(false)
+    } catch (e) {
+      setSaveError(String(e))
     } finally {
       setSaving(false)
     }
@@ -90,6 +98,9 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
             />
           ) : (
             <span className="whitespace-pre-wrap">{message.content}</span>
+          )}
+          {saveError && (
+            <p className="text-xs text-destructive mt-1">{saveError}</p>
           )}
           {isSystemPrompt && (
             <span className="flex justify-end items-center gap-1.5 mt-1">

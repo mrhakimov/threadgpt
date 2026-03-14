@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -88,9 +89,13 @@ func doRequest(method, path string, body any, result any) error {
 	return nil
 }
 
+func filterPath(table string, params url.Values) string {
+	return table + "?" + params.Encode()
+}
+
 func GetSession(apiKeyHash string) (*Session, error) {
 	var sessions []Session
-	err := doRequest("GET", "sessions?api_key_hash=eq."+apiKeyHash+"&order=created_at.desc&limit=1", nil, &sessions)
+	err := doRequest("GET", filterPath("sessions", url.Values{"api_key_hash": {"eq." + apiKeyHash}, "order": {"created_at.desc"}, "limit": {"1"}}), nil, &sessions)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +107,7 @@ func GetSession(apiKeyHash string) (*Session, error) {
 
 func GetSessionByID(sessionID string) (*Session, error) {
 	var sessions []Session
-	err := doRequest("GET", "sessions?id=eq."+sessionID+"&limit=1", nil, &sessions)
+	err := doRequest("GET", filterPath("sessions", url.Values{"id": {"eq." + sessionID}, "limit": {"1"}}), nil, &sessions)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +119,7 @@ func GetSessionByID(sessionID string) (*Session, error) {
 
 func GetSessions(apiKeyHash string) ([]Session, error) {
 	var sessions []Session
-	err := doRequest("GET", "sessions?api_key_hash=eq."+apiKeyHash+"&order=created_at.desc", nil, &sessions)
+	err := doRequest("GET", filterPath("sessions", url.Values{"api_key_hash": {"eq." + apiKeyHash}, "order": {"created_at.desc"}}), nil, &sessions)
 	return sessions, err
 }
 
@@ -152,17 +157,33 @@ func CreateNamedSession(apiKeyHash, name string) (*Session, error) {
 
 func RenameSession(sessionID, name string) error {
 	payload := map[string]string{"name": name}
-	return doRequest("PATCH", "sessions?id=eq."+sessionID, payload, nil)
+	return doRequest("PATCH", filterPath("sessions", url.Values{"id": {"eq." + sessionID}}), payload, nil)
 }
 
 func SetSystemPrompt(sessionID, systemPrompt string) error {
 	payload := map[string]string{"system_prompt": systemPrompt}
-	return doRequest("PATCH", "sessions?id=eq."+sessionID, payload, nil)
+	if err := doRequest("PATCH", filterPath("sessions", url.Values{"id": {"eq." + sessionID}}), payload, nil); err != nil {
+		return err
+	}
+	// Update the first user message so history reflects the change on reload
+	var msgs []Message
+	if err := doRequest("GET", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}, "role": {"eq.user"}, "parent_message_id": {"is.null"}, "order": {"created_at.asc"}, "limit": {"1"}}), nil, &msgs); err != nil {
+		return fmt.Errorf("SetSystemPrompt: get first message: %w", err)
+	}
+	if len(msgs) == 0 {
+		fmt.Printf("SetSystemPrompt: no user message found for session %s\n", sessionID)
+		return nil
+	}
+	fmt.Printf("SetSystemPrompt: updating message %s for session %s\n", msgs[0].ID, sessionID)
+	if err := doRequest("PATCH", filterPath("messages", url.Values{"id": {"eq." + msgs[0].ID}}), map[string]string{"content": systemPrompt}, nil); err != nil {
+		return fmt.Errorf("SetSystemPrompt: update message content: %w", err)
+	}
+	return nil
 }
 
 func UpdateSessionAssistant(sessionID, assistantID string) error {
 	payload := map[string]string{"assistant_id": assistantID}
-	return doRequest("PATCH", "sessions?id=eq."+sessionID, payload, nil)
+	return doRequest("PATCH", filterPath("sessions", url.Values{"id": {"eq." + sessionID}}), payload, nil)
 }
 
 func SaveMessage(sessionID, role, content string, openaiThreadID, parentMessageID *string) (*Message, error) {
@@ -191,27 +212,27 @@ func SaveMessage(sessionID, role, content string, openaiThreadID, parentMessageI
 
 func GetMessages(sessionID string) ([]Message, error) {
 	var messages []Message
-	err := doRequest("GET", "messages?session_id=eq."+sessionID+"&parent_message_id=is.null&order=created_at.asc", nil, &messages)
+	err := doRequest("GET", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}, "parent_message_id": {"is.null"}, "order": {"created_at.asc"}}), nil, &messages)
 	return messages, err
 }
 
 func GetThreadMessages(parentMessageID string) ([]Message, error) {
 	var messages []Message
-	err := doRequest("GET", "messages?parent_message_id=eq."+parentMessageID+"&order=created_at.asc", nil, &messages)
+	err := doRequest("GET", filterPath("messages", url.Values{"parent_message_id": {"eq." + parentMessageID}, "order": {"created_at.asc"}}), nil, &messages)
 	return messages, err
 }
 
 func DeleteSession(sessionID string) error {
 	// Delete messages first (cascade)
-	if err := doRequest("DELETE", "messages?session_id=eq."+sessionID, nil, nil); err != nil {
+	if err := doRequest("DELETE", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}}), nil, nil); err != nil {
 		return err
 	}
-	return doRequest("DELETE", "sessions?id=eq."+sessionID, nil, nil)
+	return doRequest("DELETE", filterPath("sessions", url.Values{"id": {"eq." + sessionID}}), nil, nil)
 }
 
 func GetMessageByID(messageID string) (*Message, error) {
 	var messages []Message
-	err := doRequest("GET", "messages?id=eq."+messageID+"&limit=1", nil, &messages)
+	err := doRequest("GET", filterPath("messages", url.Values{"id": {"eq." + messageID}, "limit": {"1"}}), nil, &messages)
 	if err != nil {
 		return nil, err
 	}

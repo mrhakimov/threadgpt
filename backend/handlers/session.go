@@ -4,14 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"threadgpt/db"
 	"threadgpt/openai"
 )
 
-type SessionRequest struct {
-	APIKey string `json:"api_key"`
-}
+type SessionRequest struct{}
 
 type SessionResponse struct {
 	SessionID    string  `json:"session_id"`
@@ -26,7 +25,7 @@ func hashAPIKey(apiKey string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-// HandleSession handles GET (list) and POST (create named session)
+// HandleSessions handles GET (list) and POST (create named session)
 func HandleSessions(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -39,15 +38,12 @@ func HandleSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleListSessions(w http.ResponseWriter, r *http.Request) {
-	apiKeyHash := r.URL.Query().Get("api_key_hash")
-	if apiKeyHash == "" {
-		http.Error(w, "api_key_hash required", http.StatusBadRequest)
-		return
-	}
+	apiKeyHash := APIKeyHashFromContext(r.Context())
 
 	sessions, err := db.GetSessions(apiKeyHash)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("sessions: GetSessions error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -75,13 +71,13 @@ func handleListSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateSessionRequest struct {
-	APIKey string `json:"api_key"`
-	Name   string `json:"name"`
+	Name string `json:"name"`
 }
 
 func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1*1024)
 	var req CreateSessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.APIKey == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -90,11 +86,16 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "New conversation"
 	}
+	if len(name) > 256 {
+		http.Error(w, "name too long", http.StatusBadRequest)
+		return
+	}
 
-	hash := hashAPIKey(req.APIKey)
+	hash := APIKeyHashFromContext(r.Context())
 	session, err := db.CreateNamedSession(hash, name)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("sessions: CreateNamedSession error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -108,7 +109,7 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// HandleSessionByID handles GET (fetch), PATCH (rename) and DELETE for a specific session ID
+// HandleSessionByID handles GET (fetch), PATCH (rename/update) and DELETE for a specific session ID
 func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Path[len("/api/sessions/"):]
 	if sessionID == "" {
@@ -116,15 +117,22 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hash := APIKeyHashFromContext(r.Context())
+
 	switch r.Method {
 	case http.MethodGet:
 		session, err := db.GetSessionByID(sessionID)
 		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("sessions: GetSessionByID error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		if session == nil {
 			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if session.APIKeyHash != hash {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		resp := SessionResponse{
@@ -135,54 +143,92 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+
 	case http.MethodPatch:
+		// Ownership check first
+		session, err := db.GetSessionByID(sessionID)
+		if err != nil {
+			log.Printf("sessions: GetSessionByID error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if session == nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if session.APIKeyHash != hash {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 		var req struct {
 			Name         string `json:"name"`
 			SystemPrompt string `json:"system_prompt"`
-			APIKey       string `json:"api_key"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		if req.Name != "" {
-			if err := db.RenameSession(sessionID, req.Name); err != nil {
-				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-		if req.SystemPrompt != "" {
-			if req.APIKey == "" {
-				http.Error(w, "api_key required to update system prompt", http.StatusBadRequest)
-				return
-			}
-			session, err := db.GetSessionByID(sessionID)
-			if err != nil || session == nil {
-				http.Error(w, "session not found", http.StatusNotFound)
-				return
-			}
-			if session.AssistantID != nil {
-				if err := openai.UpdateAssistantInstructions(req.APIKey, *session.AssistantID, req.SystemPrompt); err != nil {
-					http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
-			if err := db.SetSystemPrompt(sessionID, req.SystemPrompt); err != nil {
-				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
 		if req.Name == "" && req.SystemPrompt == "" {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
+		if len(req.Name) > 256 {
+			http.Error(w, "name too long", http.StatusBadRequest)
+			return
+		}
+		if len(req.SystemPrompt) > 64*1024 {
+			http.Error(w, "system prompt too long", http.StatusBadRequest)
+			return
+		}
+		if req.Name != "" {
+			if err := db.RenameSession(sessionID, req.Name); err != nil {
+				log.Printf("sessions: RenameSession error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+		if req.SystemPrompt != "" {
+			apiKey := APIKeyFromContext(r.Context())
+			if session.AssistantID != nil {
+				if err := openai.UpdateAssistantInstructions(apiKey, *session.AssistantID, req.SystemPrompt); err != nil {
+					log.Printf("sessions: UpdateAssistantInstructions error: %v", err)
+					http.Error(w, "internal server error", http.StatusInternalServerError)
+					return
+				}
+			}
+			if err := db.SetSystemPrompt(sessionID, req.SystemPrompt); err != nil {
+				log.Printf("sessions: SetSystemPrompt error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusNoContent)
+
 	case http.MethodDelete:
+		// Ownership check first
+		session, err := db.GetSessionByID(sessionID)
+		if err != nil {
+			log.Printf("sessions: GetSessionByID error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if session == nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if session.APIKeyHash != hash {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if err := db.DeleteSession(sessionID); err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("sessions: DeleteSession error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -195,16 +241,11 @@ func HandleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req SessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.APIKey == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-
-	hash := hashAPIKey(req.APIKey)
+	hash := APIKeyHashFromContext(r.Context())
 	session, err := db.GetSession(hash)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("session: GetSession error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 

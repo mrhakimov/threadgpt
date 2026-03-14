@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"threadgpt/db"
 	"threadgpt/openai"
 )
 
 type ThreadRequest struct {
-	APIKey          string `json:"api_key"`
 	ParentMessageID string `json:"parent_message_id"`
 	UserMessage     string `json:"user_message"`
 }
@@ -19,13 +19,19 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	var req ThreadRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.APIKey == "" || req.ParentMessageID == "" || req.UserMessage == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ParentMessageID == "" || req.UserMessage == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	if len(req.UserMessage) > 32*1024 {
+		http.Error(w, "message too long", http.StatusBadRequest)
+		return
+	}
 
-	hash := hashAPIKey(req.APIKey)
+	apiKey := APIKeyFromContext(r.Context())
+	hash := APIKeyHashFromContext(r.Context())
 
 	// Look up the parent message to get its session
 	parentMsg, err := db.GetMessageByID(req.ParentMessageID)
@@ -50,7 +56,8 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	// Look up existing sub-thread messages for this parent
 	existing, err := db.GetThreadMessages(req.ParentMessageID)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("thread: GetThreadMessages error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -58,16 +65,18 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 
 	if len(existing) == 0 {
 		// First reply: create a new thread starting with the parent message as context
-		threadID, err = openai.CreateThread(req.APIKey)
+		threadID, err = openai.CreateThread(apiKey)
 		if err != nil {
-			http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("thread: CreateThread error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 
 		// Seed thread with parent assistant message as context
 		if parentMsg.Role == "assistant" {
-			if err := openai.AddAssistantMessage(req.APIKey, threadID, parentMsg.Content); err != nil {
-				http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
+			if err := openai.AddAssistantMessage(apiKey, threadID, parentMsg.Content); err != nil {
+				log.Printf("thread: AddAssistantMessage error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 		}
@@ -81,8 +90,9 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add user message
-	if err := openai.AddMessage(req.APIKey, threadID, req.UserMessage); err != nil {
-		http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
+	if err := openai.AddMessage(apiKey, threadID, req.UserMessage); err != nil {
+		log.Printf("thread: AddMessage error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -90,13 +100,15 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	parentID := req.ParentMessageID
 	_, err = db.SaveMessage(session.ID, "user", req.UserMessage, &threadID, &parentID)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("thread: SaveMessage error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	// Stream response
-	assistantText, err := openai.RunAndStream(req.APIKey, threadID, *session.AssistantID, w)
+	assistantText, err := openai.RunAndStream(apiKey, threadID, *session.AssistantID, w)
 	if err != nil {
+		log.Printf("thread: RunAndStream error: %v", err)
 		return
 	}
 

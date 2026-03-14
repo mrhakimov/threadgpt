@@ -13,16 +13,17 @@ import SettingsPage from "./SettingsPage"
 import { updateSystemPrompt } from "@/lib/api"
 
 interface Props {
-  apiKey: string
+  token: string
   sessionId: string | null | undefined
   onSelectSession: (sessionId: string | null) => void
+  onUnauthorized: () => void
 }
 
-export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) {
+export default function ChatView({ token, sessionId, onSelectSession, onUnauthorized }: Props) {
   const { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt } =
-    useChat(apiKey, sessionId, (resolvedId) => {
+    useChat(token, sessionId, (resolvedId) => {
       if (!sessionId) onSelectSession(resolvedId)
-    })
+    }, onUnauthorized)
   const [threadParent, setThreadParent] = useState<Message | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -70,7 +71,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
       {/* Header */}
       <header className="shrink-0 border-b px-4 py-3 flex items-center gap-3">
         <ConversationMenu
-          apiKey={apiKey}
+          token={token}
           activeSessionId={sessionId ?? null}
           isCurrentEmpty={isEmpty}
           onSelectSession={onSelectSession}
@@ -115,7 +116,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
               streamingContent={streamingContent}
               onReply={setThreadParent}
               onEditSystemPrompt={session?.session_id ? async (content) => {
-                await updateSystemPrompt(session.session_id!, content, apiKey)
+                await updateSystemPrompt(session.session_id!, content, token)
                 updateLocalSystemPrompt(content)
               } : undefined}
               scrollRef={scrollRef}
@@ -160,7 +161,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
       {/* Thread Drawer */}
       {threadParent && (
         <ThreadDrawer
-          apiKey={apiKey}
+          token={token}
           parentMessage={threadParent}
           onClose={() => setThreadParent(null)}
         />
@@ -168,7 +169,7 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
 
       {/* Settings */}
       {showSettings && (
-        <SettingsPage apiKey={apiKey} onClose={() => setShowSettings(false)} />
+        <SettingsPage token={token} onClose={() => setShowSettings(false)} />
       )}
     </div>
   )

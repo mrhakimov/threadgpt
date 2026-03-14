@@ -4,19 +4,11 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface Props {
-  apiKey: string
+  token: string
   onClose: () => void
 }
 
-function maskApiKey(key: string): string {
-  if (key.length <= 12) return key
-  const start = key.slice(0, 6)
-  const end = key.slice(-4)
-  const masked = "•".repeat(Math.min(key.length - 10, 20))
-  return `${start}${masked}${end}`
-}
-
-export default function SettingsPage({ apiKey, onClose }: Props) {
+export default function SettingsPage({ token, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col">
       <header className="shrink-0 border-b px-4 py-3 flex items-center justify-between">
@@ -30,13 +22,13 @@ export default function SettingsPage({ apiKey, onClose }: Props) {
         <div className="max-w-lg mx-auto space-y-6">
           <section>
             <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-              API Key
+              Session Token
             </h2>
             <div className="rounded-md border px-4 py-3 font-mono text-sm break-all bg-muted/40">
-              {maskApiKey(apiKey)}
+              {token.slice(0, 8) + "••••••••"}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Your API key is stored locally and never sent to our servers.
+              Your API key was exchanged for a session token. The raw key is never stored locally.
             </p>
           </section>
         </div>

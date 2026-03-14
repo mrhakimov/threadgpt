@@ -122,7 +122,6 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	flusher, canFlush := w.(http.Flusher)
 

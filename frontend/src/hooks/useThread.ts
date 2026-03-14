@@ -4,7 +4,7 @@ import { useState, useCallback } from "react"
 import { Message } from "@/types"
 import { sendThreadMessage } from "@/lib/api"
 
-export function useThread(apiKey: string, parentMessageId: string) {
+export function useThread(token: string, parentMessageId: string) {
   const [messages, setMessages] = useState<Message[]>([])
   const [sending, setSending] = useState(false)
   const [streamingContent, setStreamingContent] = useState("")
@@ -28,7 +28,7 @@ export function useThread(apiKey: string, parentMessageId: string) {
     let accumulated = ""
 
     try {
-      await sendThreadMessage(apiKey, parentMessageId, content, (chunk) => {
+      await sendThreadMessage(token, parentMessageId, content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
       })
@@ -48,7 +48,7 @@ export function useThread(apiKey: string, parentMessageId: string) {
     } finally {
       setSending(false)
     }
-  }, [apiKey, parentMessageId, sending])
+  }, [token, parentMessageId, sending])
 
   return { messages, sending, streamingContent, error, sendMessage }
 }

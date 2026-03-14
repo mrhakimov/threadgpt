@@ -12,14 +12,18 @@ import (
 
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "http://localhost:3000"
+		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
+		if allowedOrigin == "" {
+			allowedOrigin = "http://localhost:3000"
 		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		origin := r.Header.Get("Origin")
+		if origin == allowedOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		}
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -40,13 +44,16 @@ func main() {
 		port = "8000"
 	}
 
+	go handlers.PurgeExpiredTokens()
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/session", corsMiddleware(handlers.HandleSession))
-	mux.HandleFunc("/api/sessions", corsMiddleware(handlers.HandleSessions))
-	mux.HandleFunc("/api/sessions/", corsMiddleware(handlers.HandleSessionByID))
-	mux.HandleFunc("/api/history", corsMiddleware(handlers.HandleHistory))
-	mux.HandleFunc("/api/chat", corsMiddleware(handlers.HandleChat))
-	mux.HandleFunc("/api/thread", corsMiddleware(handlers.HandleThread))
+	mux.HandleFunc("/api/auth", corsMiddleware(handlers.HandleAuth))
+	mux.HandleFunc("/api/session", corsMiddleware(handlers.RequireAuth(handlers.HandleSession)))
+	mux.HandleFunc("/api/sessions", corsMiddleware(handlers.RequireAuth(handlers.HandleSessions)))
+	mux.HandleFunc("/api/sessions/", corsMiddleware(handlers.RequireAuth(handlers.HandleSessionByID)))
+	mux.HandleFunc("/api/history", corsMiddleware(handlers.RequireAuth(handlers.HandleHistory)))
+	mux.HandleFunc("/api/chat", corsMiddleware(handlers.RequireAuth(handlers.HandleChat)))
+	mux.HandleFunc("/api/thread", corsMiddleware(handlers.RequireAuth(handlers.HandleThread)))
 
 	fmt.Printf("ThreadGPT backend listening on :%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, mux))

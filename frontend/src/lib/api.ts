@@ -1,7 +1,14 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-export async function initSession(apiKey: string) {
-  const res = await fetch(`${API_URL}/api/session`, {
+function authHeaders(token: string) {
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`,
+  }
+}
+
+export async function auth(apiKey: string): Promise<{ token: string }> {
+  const res = await fetch(`${API_URL}/api/auth`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ api_key: apiKey }),
@@ -10,68 +17,79 @@ export async function initSession(apiKey: string) {
   return res.json()
 }
 
-export async function fetchSession(sessionId: string) {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}`)
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
-}
-
-export async function fetchSessions(apiKey: string) {
-  const hash = await sha256(apiKey)
-  const res = await fetch(`${API_URL}/api/sessions?api_key_hash=${hash}`)
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
-}
-
-export async function createSession(apiKey: string, name: string) {
-  const res = await fetch(`${API_URL}/api/sessions`, {
+export async function initSession(token: string) {
+  const res = await fetch(`${API_URL}/api/session`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey, name }),
+    headers: authHeaders(token),
+    body: JSON.stringify({}),
   })
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
 
-export async function renameSession(sessionId: string, name: string) {
+export async function fetchSession(sessionId: string, token: string) {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function fetchSessions(token: string) {
+  const res = await fetch(`${API_URL}/api/sessions`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function createSession(token: string, name: string) {
+  const res = await fetch(`${API_URL}/api/sessions`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function renameSession(token: string, sessionId: string, name: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(token),
     body: JSON.stringify({ name }),
   })
   if (!res.ok) throw new Error(await res.text())
 }
 
-export async function updateSystemPrompt(sessionId: string, systemPrompt: string, apiKey: string) {
+export async function updateSystemPrompt(sessionId: string, systemPrompt: string, token: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system_prompt: systemPrompt, api_key: apiKey }),
+    headers: authHeaders(token),
+    body: JSON.stringify({ system_prompt: systemPrompt }),
   })
   if (!res.ok) throw new Error(await res.text())
 }
 
-export async function deleteSession(sessionId: string) {
+export async function deleteSession(token: string, sessionId: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     method: "DELETE",
+    headers: authHeaders(token),
   })
   if (!res.ok) throw new Error(await res.text())
 }
 
-export async function fetchHistory(apiKey: string, sessionId?: string) {
-  if (sessionId) {
-    const res = await fetch(`${API_URL}/api/history?session_id=${sessionId}`)
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
-  }
-  const hash = await sha256(apiKey)
-  const res = await fetch(`${API_URL}/api/history?api_key_hash=${hash}`)
+export async function fetchHistory(token: string, sessionId?: string) {
+  const url = sessionId
+    ? `${API_URL}/api/history?session_id=${sessionId}`
+    : `${API_URL}/api/history`
+  const res = await fetch(url, { headers: authHeaders(token) })
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
 
 export async function sendChatMessage(
-  apiKey: string,
+  token: string,
   userMessage: string,
   onChunk: (chunk: string) => void,
   sessionId?: string,
@@ -79,24 +97,23 @@ export async function sendChatMessage(
 ): Promise<string | undefined> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey, user_message: userMessage, session_id: sessionId ?? "", force_new: forceNew ?? false }),
+    headers: authHeaders(token),
+    body: JSON.stringify({ user_message: userMessage, session_id: sessionId ?? "", force_new: forceNew ?? false }),
   })
   if (!res.ok) throw new Error(await res.text())
   return consumeStream(res, onChunk)
 }
 
 export async function sendThreadMessage(
-  apiKey: string,
+  token: string,
   parentMessageId: string,
   userMessage: string,
   onChunk: (chunk: string) => void
 ): Promise<void> {
   const res = await fetch(`${API_URL}/api/thread`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(token),
     body: JSON.stringify({
-      api_key: apiKey,
       parent_message_id: parentMessageId,
       user_message: userMessage,
     }),
@@ -134,11 +151,4 @@ async function consumeStream(res: Response, onChunk: (chunk: string) => void): P
     }
   }
   return resolvedSessionId
-}
-
-export async function sha256(text: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(text)
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
 }

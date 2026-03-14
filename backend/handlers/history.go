@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"threadgpt/db"
 )
@@ -12,12 +13,25 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If session_id provided directly, use it
+	hash := APIKeyHashFromContext(r.Context())
+
+	// Optional session_id filter — verify ownership before returning
 	sessionID := r.URL.Query().Get("session_id")
 	if sessionID != "" {
+		session, err := db.GetSessionByID(sessionID)
+		if err != nil {
+			log.Printf("history: GetSessionByID error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if session == nil || session.APIKeyHash != hash {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		messages, err := db.GetMessages(sessionID)
 		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("history: GetMessages error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -25,19 +39,10 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKeyHash := r.URL.Query().Get("api_key_hash")
-	if apiKeyHash == "" {
-		apiKey := r.URL.Query().Get("api_key")
-		if apiKey == "" {
-			http.Error(w, "session_id or api_key_hash required", http.StatusBadRequest)
-			return
-		}
-		apiKeyHash = hashAPIKey(apiKey)
-	}
-
-	session, err := db.GetSession(apiKeyHash)
+	session, err := db.GetSession(hash)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("history: GetSession error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -49,7 +54,8 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 
 	messages, err := db.GetMessages(session.ID)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("history: GetMessages error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 

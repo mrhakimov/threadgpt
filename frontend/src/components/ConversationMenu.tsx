@@ -6,14 +6,14 @@ import { Menu, Plus, MessageSquare, X, Pencil, Trash2, Check } from "lucide-reac
 import { fetchSessions, renameSession, deleteSession } from "@/lib/api"
 
 interface Props {
-  apiKey: string
+  token: string
   activeSessionId: string | null
   isCurrentEmpty?: boolean
   onSelectSession: (sessionId: string | null) => void
   onRenameActive?: (name: string) => void
 }
 
-export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmpty, onSelectSession, onRenameActive }: Props) {
+export default function ConversationMenu({ token, activeSessionId, isCurrentEmpty, onSelectSession, onRenameActive }: Props) {
   const [open, setOpen] = useState(false)
   const [sessions, setSessions] = useState<Session[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +46,7 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
 
   async function loadSessions() {
     try {
-      const data = await fetchSessions(apiKey)
+      const data = await fetchSessions(token)
       setSessions(data)
     } catch {
       // silently fail
@@ -70,7 +70,7 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
     setEditingId(null)
     if (!name) return
     try {
-      await renameSession(sessionId, name)
+      await renameSession(token, sessionId, name)
       setSessions((prev) =>
         prev.map((s) => (s.session_id === sessionId ? { ...s, name } : s))
       )
@@ -92,7 +92,7 @@ export default function ConversationMenu({ apiKey, activeSessionId, isCurrentEmp
 
   async function confirmDelete(sessionId: string) {
     try {
-      await deleteSession(sessionId)
+      await deleteSession(token, sessionId)
       setSessions((prev) => prev.filter((x) => x.session_id !== sessionId))
       if (activeSessionId === sessionId) {
         onSelectSession(null)

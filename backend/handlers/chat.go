@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"threadgpt/db"
 	"threadgpt/openai"
 )
 
 type ChatRequest struct {
-	APIKey      string `json:"api_key"`
 	UserMessage string `json:"user_message"`
 	SessionID   string `json:"session_id"`
 	ForceNew    bool   `json:"force_new"`
@@ -20,13 +20,19 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	var req ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.APIKey == "" || req.UserMessage == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UserMessage == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	if len(req.UserMessage) > 32*1024 {
+		http.Error(w, "message too long", http.StatusBadRequest)
+		return
+	}
 
-	hash := hashAPIKey(req.APIKey)
+	apiKey := APIKeyFromContext(r.Context())
+	hash := APIKeyHashFromContext(r.Context())
 
 	// Look up session: by explicit ID, or fall back to most recent (unless force_new)
 	var session *db.Session
@@ -34,7 +40,8 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	if req.SessionID != "" {
 		session, err = db.GetSessionByID(req.SessionID)
 		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("chat: GetSessionByID error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		// Verify session belongs to this user
@@ -45,36 +52,41 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	} else if !req.ForceNew {
 		session, err = db.GetSession(hash)
 		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("chat: GetSession error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
 
 	if session == nil || session.AssistantID == nil {
 		// First message: create Assistant and bind to session
-		assistantID, err := openai.CreateAssistant(req.APIKey, req.UserMessage)
+		assistantID, err := openai.CreateAssistant(apiKey, req.UserMessage)
 		if err != nil {
-			http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("chat: CreateAssistant error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 
 		if session == nil {
 			session, err = db.CreateSession(hash, req.UserMessage)
 			if err != nil {
-				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				log.Printf("chat: CreateSession error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 		} else {
 			// Named session exists but has no assistant yet — set system prompt
 			if err := db.SetSystemPrompt(session.ID, req.UserMessage); err != nil {
-				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				log.Printf("chat: SetSystemPrompt error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
 		}
 
 		err = db.UpdateSessionAssistant(session.ID, assistantID)
 		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("chat: UpdateSessionAssistant error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		session.AssistantID = &assistantID
@@ -82,7 +94,8 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		// Save the first user message
 		_, err = db.SaveMessage(session.ID, "user", req.UserMessage, nil, nil)
 		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+			log.Printf("chat: SaveMessage error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -90,7 +103,6 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		sessionJSON, _ := json.Marshal(map[string]string{"session_id": session.ID})
 		w.Write([]byte("data: " + string(sessionJSON) + "\n\n"))
@@ -107,39 +119,41 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threadID, err := openai.CreateThread(req.APIKey)
+	threadID, err := openai.CreateThread(apiKey)
 	if err != nil {
-		http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("chat: CreateThread error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	if err := openai.AddMessage(req.APIKey, threadID, req.UserMessage); err != nil {
-		http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
+	if err := openai.AddMessage(apiKey, threadID, req.UserMessage); err != nil {
+		log.Printf("chat: AddMessage error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	// Save user message
 	_, err = db.SaveMessage(session.ID, "user", req.UserMessage, &threadID, nil)
 	if err != nil {
-		http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("chat: SaveMessage error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Stream the response (session_id is emitted first by RunAndStream preamble via w)
-	// Emit session_id before streaming so frontend can track which session this is
+	// Stream the response
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	sessionJSON, _ := json.Marshal(map[string]string{"session_id": session.ID})
 	w.Write([]byte("data: " + string(sessionJSON) + "\n\n"))
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
 
-	assistantText, err := openai.RunAndStream(req.APIKey, threadID, *session.AssistantID, w)
+	assistantText, err := openai.RunAndStream(apiKey, threadID, *session.AssistantID, w)
 	if err != nil {
 		// Headers already sent if streaming started, just log
+		log.Printf("chat: RunAndStream error: %v", err)
 		return
 	}
 
