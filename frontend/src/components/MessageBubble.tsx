@@ -20,8 +20,6 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(message.content)
-  const [spanHeight, setSpanHeight] = useState<number | null>(null)
-  const [bubbleWidth, setBubbleWidth] = useState<number | null>(null)
   const bubbleRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -30,8 +28,7 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const tooltipRef = useRef<HTMLSpanElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const spanRef = useRef<HTMLSpanElement>(null)
+  const editableRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!showTooltip) return
@@ -45,10 +42,15 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
   }, [showTooltip])
 
   useEffect(() => {
-    if (editing && textareaRef.current) {
-      const ta = textareaRef.current
-      ta.focus()
-      ta.selectionStart = ta.value.length
+    if (editing && editableRef.current) {
+      const el = editableRef.current
+      el.focus()
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      range.collapse(false)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
     }
   }, [editing])
 
@@ -66,16 +68,13 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
       setSaveError(String(e))
     } finally {
       setSaving(false)
-      setSpanHeight(null)
-      setBubbleWidth(null)
     }
   }
 
   function handleCancel() {
+    if (editableRef.current) editableRef.current.textContent = message.content
     setEditValue(message.content)
     setEditing(false)
-    setSpanHeight(null)
-    setBubbleWidth(null)
   }
 
   async function handleCopy() {
@@ -97,14 +96,13 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
       <div className={cn("group relative max-w-[80%]", isAssistant ? "items-start" : "items-end")}>
         <div
           ref={bubbleRef}
-          style={bubbleWidth != null ? { width: bubbleWidth } : undefined}
           className={cn(
-            "relative rounded-2xl px-4 py-3 text-sm leading-relaxed",
+            "relative rounded-2xl px-4 text-sm leading-relaxed",
             isAssistant
-              ? "bg-muted text-foreground rounded-tl-sm"
+              ? "bg-muted text-foreground rounded-tl-sm py-3"
               : isSystemPrompt
-              ? "bg-muted/60 text-foreground border border-border rounded-tr-sm"
-              : "bg-primary text-primary-foreground rounded-tr-sm"
+              ? "bg-muted/60 text-foreground border border-border rounded-tr-sm py-3"
+              : "bg-primary text-primary-foreground rounded-tr-sm py-3"
           )}
         >
           {/* Agent message: copy button top-right, always visible */}
@@ -112,58 +110,58 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
             <span className="absolute top-2 right-2">{copyButton}</span>
           )}
 
-          <span ref={spanRef} className={cn("whitespace-pre-wrap", editing && "hidden", isAssistant && "pr-5")}>{message.content}</span>
-          {editing && (
-            <textarea
-              ref={textareaRef}
-              value={editValue}
-              onChange={(e) => {
-                setEditValue(e.target.value)
-                const ta = e.currentTarget
-                ta.style.height = "auto"
-                ta.style.height = ta.scrollHeight + "px"
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") handleCancel()
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSave()
-              }}
-              className="w-full bg-transparent resize-none outline-none whitespace-pre-wrap overflow-hidden p-0 m-0 border-0 leading-relaxed text-sm"
-              style={{ height: spanHeight != null ? spanHeight + 3 + "px" : "auto" }}
-              disabled={saving}
-            />
-          )}
+          <div
+            ref={editableRef}
+            contentEditable={editing}
+            suppressContentEditableWarning
+            onInput={(e) => setEditValue(e.currentTarget.textContent ?? "")}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.preventDefault(); handleCancel() }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSave() }
+            }}
+            className={cn("whitespace-pre-wrap outline-none", isAssistant && "pr-5", editing && "cursor-text")}
+          >{message.content}</div>
           {saveError && (
             <p className="text-xs text-destructive mt-1">{saveError}</p>
           )}
           {isSystemPrompt && (
-            <span className="flex justify-end items-center gap-1.5 mt-1">
-              {editing ? (
-                <>
-                  <button onClick={handleCancel} disabled={saving} className="text-muted-foreground hover:text-foreground transition-colors">
+            <span className="flex justify-end items-center gap-1.5 mt-1.5">
+              {/* slot 1: Pencil (view) / X (edit) */}
+              {onEditSystemPrompt && (
+                <span className="relative w-3.5 h-3.5">
+                  <button
+                    onClick={() => setEditing(true)}
+                    className={cn("absolute inset-0 text-muted-foreground hover:text-foreground transition-colors", editing ? "invisible" : "opacity-0 group-hover:opacity-100 transition-opacity")}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    disabled={saving}
+                    className={cn("absolute inset-0 text-muted-foreground hover:text-foreground transition-colors", !editing && "invisible")}
+                  >
                     <X className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={handleSave} disabled={saving} className="text-muted-foreground hover:text-foreground transition-colors">
-                    <Check className="h-3.5 w-3.5" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  {onEditSystemPrompt && (
-                    <button
-                      onClick={() => {
-                        if (spanRef.current) setSpanHeight(spanRef.current.offsetHeight)
-                        if (bubbleRef.current) setBubbleWidth(bubbleRef.current.offsetWidth)
-                        setEditing(true)
-                      }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {/* System prompt: copy button between edit and info, hover only */}
-                  <span className="opacity-0 group-hover:opacity-100 transition-opacity">{copyButton}</span>
-                </>
+                </span>
               )}
+              {/* slot 2: Copy (view) / Check (edit) */}
+              <span className="relative w-3.5 h-3.5">
+                <button
+                  onClick={handleCopy}
+                  className={cn("absolute inset-0 text-muted-foreground hover:text-foreground transition-colors", editing ? "invisible" : "opacity-0 group-hover:opacity-100 transition-opacity")}
+                  title="Copy"
+                >
+                  {copied ? <CopyCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className={cn("absolute inset-0 text-muted-foreground hover:text-foreground transition-colors", !editing && "invisible")}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+              </span>
+              {/* info icon — always visible */}
               <span className="relative" ref={tooltipRef}>
                 <Info
                   className="h-3.5 w-3.5 text-muted-foreground cursor-pointer"
