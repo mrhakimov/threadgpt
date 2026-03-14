@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Message } from "@/types"
 import { Button } from "@/components/ui/button"
-import { MessageSquare, Info, Pencil, Check, X } from "lucide-react"
+import { MessageSquare, Info, Pencil, Check, X, Copy, CopyCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Props {
@@ -17,6 +17,7 @@ interface Props {
 export default function MessageBubble({ message, streaming, onReply, isSystemPrompt, onEditSystemPrompt }: Props) {
   const isAssistant = message.role === "assistant"
   const [showTooltip, setShowTooltip] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(message.content)
   const [spanHeight, setSpanHeight] = useState<number | null>(null)
@@ -77,6 +78,18 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
     setBubbleWidth(null)
   }
 
+  async function handleCopy() {
+    await navigator.clipboard.writeText(message.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const copyButton = (
+    <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground transition-colors" title="Copy">
+      {copied ? <CopyCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  )
+
   return (
     <div
       className={cn("flex w-full", isAssistant ? "justify-start" : "justify-end")}
@@ -86,7 +99,7 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
           ref={bubbleRef}
           style={bubbleWidth != null ? { width: bubbleWidth } : undefined}
           className={cn(
-            "rounded-2xl px-4 py-3 text-sm leading-relaxed",
+            "relative rounded-2xl px-4 py-3 text-sm leading-relaxed",
             isAssistant
               ? "bg-muted text-foreground rounded-tl-sm"
               : isSystemPrompt
@@ -94,7 +107,12 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
               : "bg-primary text-primary-foreground rounded-tr-sm"
           )}
         >
-          <span ref={spanRef} className={cn("whitespace-pre-wrap", editing && "hidden")}>{message.content}</span>
+          {/* Agent message: copy button top-right, always visible */}
+          {isAssistant && !streaming && (
+            <span className="absolute top-2 right-2">{copyButton}</span>
+          )}
+
+          <span ref={spanRef} className={cn("whitespace-pre-wrap", editing && "hidden", isAssistant && "pr-5")}>{message.content}</span>
           {editing && (
             <textarea
               ref={textareaRef}
@@ -129,18 +147,22 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
                   </button>
                 </>
               ) : (
-                onEditSystemPrompt && (
-                  <button
-                    onClick={() => {
-                      if (spanRef.current) setSpanHeight(spanRef.current.offsetHeight)
-                      if (bubbleRef.current) setBubbleWidth(bubbleRef.current.offsetWidth)
-                      setEditing(true)
-                    }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                )
+                <>
+                  {onEditSystemPrompt && (
+                    <button
+                      onClick={() => {
+                        if (spanRef.current) setSpanHeight(spanRef.current.offsetHeight)
+                        if (bubbleRef.current) setBubbleWidth(bubbleRef.current.offsetWidth)
+                        setEditing(true)
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {/* System prompt: copy button between edit and info, hover only */}
+                  <span className="opacity-0 group-hover:opacity-100 transition-opacity">{copyButton}</span>
+                </>
               )}
               <span className="relative" ref={tooltipRef}>
                 <Info
@@ -159,6 +181,13 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
             <span className="inline-block w-2 h-4 ml-1 bg-current opacity-70 animate-pulse align-text-bottom" />
           )}
         </div>
+
+        {/* User message: copy button below pill, right side, hover only */}
+        {!isAssistant && !isSystemPrompt && !streaming && (
+          <div className="flex justify-end mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {copyButton}
+          </div>
+        )}
 
         {isAssistant && onReply && !streaming && (
           <Button
