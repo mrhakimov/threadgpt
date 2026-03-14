@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"threadgpt/db"
@@ -112,8 +113,13 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save assistant response
+	// Save assistant response before signaling done so fetchHistory returns it
 	if assistantText != "" {
 		db.SaveMessage(session.ID, "assistant", assistantText, &threadID, &parentID)
+	}
+
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
 	}
 }

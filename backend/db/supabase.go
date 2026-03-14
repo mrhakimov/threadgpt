@@ -3,13 +3,18 @@ package db
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
 )
+
+// ErrInternal is returned when a Supabase operation fails, hiding internal details from callers.
+var ErrInternal = errors.New("internal error")
 
 type Session struct {
 	ID           string  `json:"id"`
@@ -80,7 +85,8 @@ func doRequest(method, path string, body any, result any) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("supabase error %d: %s", resp.StatusCode, string(respBody))
+		log.Printf("supabase error %d: %s", resp.StatusCode, string(respBody))
+		return ErrInternal
 	}
 
 	if result != nil && len(respBody) > 0 {

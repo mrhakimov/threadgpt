@@ -14,9 +14,9 @@ export default function Home() {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
+    const stored = sessionStorage.getItem(STORAGE_KEY)
     if (stored) setToken(stored)
-    const storedSession = localStorage.getItem(SESSION_KEY)
+    const storedSession = sessionStorage.getItem(SESSION_KEY)
     // undefined = auto-detect latest; null = blank new; string = specific session
     setSessionId(storedSession ?? undefined)
     setMounted(true)
@@ -24,8 +24,8 @@ export default function Home() {
 
   async function handleApiKey(key: string) {
     const { token: newToken } = await auth(key)
-    localStorage.setItem(STORAGE_KEY, newToken)
-    localStorage.removeItem(SESSION_KEY)
+    sessionStorage.setItem(STORAGE_KEY, newToken)
+    sessionStorage.removeItem(SESSION_KEY)
     setSessionId(undefined)
     setToken(newToken)
   }
@@ -34,14 +34,14 @@ export default function Home() {
     // null = blank new conversation (clear storage); string = specific session
     setSessionId(id)
     if (id) {
-      localStorage.setItem(SESSION_KEY, id)
+      sessionStorage.setItem(SESSION_KEY, id)
     } else {
-      localStorage.removeItem(SESSION_KEY)
+      sessionStorage.removeItem(SESSION_KEY)
     }
   }
 
   function handleUnauthorized() {
-    localStorage.removeItem(STORAGE_KEY)
+    sessionStorage.removeItem(STORAGE_KEY)
     setToken(null)
   }
 

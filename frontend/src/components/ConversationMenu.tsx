@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
-import { Menu, Plus, MessageSquare, X, Pencil, Trash2, Check } from "lucide-react"
+import { Menu, Plus, MessageSquare, X, Pencil, Trash2, Check, Loader2 } from "lucide-react"
 import { fetchSessions, renameSession, deleteSession } from "@/lib/api"
+import { Session } from "@/types"
 
 interface Props {
   token: string
@@ -16,6 +17,7 @@ interface Props {
 export default function ConversationMenu({ token, activeSessionId, isCurrentEmpty, onSelectSession, onRenameActive }: Props) {
   const [open, setOpen] = useState(false)
   const [sessions, setSessions] = useState<Session[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
@@ -45,11 +47,14 @@ export default function ConversationMenu({ token, activeSessionId, isCurrentEmpt
   }, [editingId])
 
   async function loadSessions() {
+    setLoadingSessions(true)
     try {
       const data = await fetchSessions(token)
       setSessions(data)
     } catch {
       // silently fail
+    } finally {
+      setLoadingSessions(false)
     }
   }
 
@@ -144,10 +149,13 @@ export default function ConversationMenu({ token, activeSessionId, isCurrentEmpt
             {error && <p className="text-xs text-destructive mb-2 px-1">{error}</p>}
 
             <div className="max-h-80 overflow-y-auto space-y-1">
-              {sessions.length === 0 && (
+              {loadingSessions ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : sessions.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">No conversations yet</p>
-              )}
-              {sessions.map((s) => (
+              ) : sessions.map((s) => (
                 <div
                   key={s.session_id}
                   className={`group w-full text-left rounded-md px-3 py-2 text-sm flex items-center gap-2 hover:bg-muted transition-colors ${

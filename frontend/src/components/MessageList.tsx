@@ -7,12 +7,13 @@ import MessageBubble from "./MessageBubble"
 interface Props {
   messages: Message[]
   streamingContent?: string
+  sending?: boolean
   onReply?: (message: Message) => void
   onEditSystemPrompt?: (newContent: string) => Promise<void>
-  scrollRef?: RefObject<HTMLDivElement>
+  scrollRef?: RefObject<HTMLDivElement | null>
 }
 
-export default function MessageList({ messages, streamingContent, onReply, onEditSystemPrompt, scrollRef }: Props) {
+export default function MessageList({ messages, streamingContent, sending, onReply, onEditSystemPrompt, scrollRef }: Props) {
   useEffect(() => {
     const el = scrollRef?.current
     if (!el) return
@@ -28,6 +29,14 @@ export default function MessageList({ messages, streamingContent, onReply, onEdi
       {messages.map((msg, i) => (
         <MessageBubble key={msg.id} message={msg} onReply={onReply} isSystemPrompt={i === 0 && msg.role === "user"} onEditSystemPrompt={i === 0 && msg.role === "user" ? onEditSystemPrompt : undefined} />
       ))}
+
+      {sending && !streamingContent && (
+        <div className="flex gap-1 px-4 py-2">
+          <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.3s]" />
+          <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.15s]" />
+          <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce" />
+        </div>
+      )}
 
       {streamingContent && (
         <MessageBubble

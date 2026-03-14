@@ -10,6 +10,16 @@ import (
 	"github.com/joho/godotenv"
 )
 
+func securityHeaders(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next(w, r)
+	}
+}
+
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
@@ -22,7 +32,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-ID")
 		}
 
 		if r.Method == http.MethodOptions {
@@ -47,13 +57,13 @@ func main() {
 	go handlers.PurgeExpiredTokens()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/auth", corsMiddleware(handlers.HandleAuth))
-	mux.HandleFunc("/api/session", corsMiddleware(handlers.RequireAuth(handlers.HandleSession)))
-	mux.HandleFunc("/api/sessions", corsMiddleware(handlers.RequireAuth(handlers.HandleSessions)))
-	mux.HandleFunc("/api/sessions/", corsMiddleware(handlers.RequireAuth(handlers.HandleSessionByID)))
-	mux.HandleFunc("/api/history", corsMiddleware(handlers.RequireAuth(handlers.HandleHistory)))
-	mux.HandleFunc("/api/chat", corsMiddleware(handlers.RequireAuth(handlers.HandleChat)))
-	mux.HandleFunc("/api/thread", corsMiddleware(handlers.RequireAuth(handlers.HandleThread)))
+	mux.HandleFunc("/api/auth", securityHeaders(corsMiddleware(handlers.HandleAuth)))
+	mux.HandleFunc("/api/session", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSession))))
+	mux.HandleFunc("/api/sessions", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSessions))))
+	mux.HandleFunc("/api/sessions/", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSessionByID))))
+	mux.HandleFunc("/api/history", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleHistory))))
+	mux.HandleFunc("/api/chat", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleChat))))
+	mux.HandleFunc("/api/thread", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleThread))))
 
 	fmt.Printf("ThreadGPT backend listening on :%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, mux))

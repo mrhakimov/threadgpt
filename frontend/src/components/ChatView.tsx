@@ -114,6 +114,7 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
             <MessageList
               messages={messages}
               streamingContent={streamingContent}
+              sending={sending}
               onReply={setThreadParent}
               onEditSystemPrompt={session?.session_id ? async (content) => {
                 await updateSystemPrompt(session.session_id!, content, token)

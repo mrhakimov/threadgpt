@@ -15,8 +15,8 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 
 	hash := APIKeyHashFromContext(r.Context())
 
-	// Optional session_id filter — verify ownership before returning
-	sessionID := r.URL.Query().Get("session_id")
+	// Optional session_id filter — passed via X-Session-ID header to avoid URL exposure
+	sessionID := r.Header.Get("X-Session-ID")
 	if sessionID != "" {
 		session, err := db.GetSessionByID(sessionID)
 		if err != nil {

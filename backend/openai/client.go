@@ -4,12 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ErrInternal is returned when an OpenAI API call fails, hiding internal details from callers.
+var ErrInternal = errors.New("internal error")
 
 const baseURL = "https://api.openai.com/v1"
 
@@ -45,7 +50,8 @@ func doRequest(apiKey, method, path string, body any, result any) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("openai error %d: %s", resp.StatusCode, string(respBody))
+		log.Printf("openai error %d: %s", resp.StatusCode, string(respBody))
+		return ErrInternal
 	}
 
 	if result != nil {
@@ -115,7 +121,8 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("openai error %d: %s", resp.StatusCode, string(body))
+		log.Printf("openai stream error %d: %s", resp.StatusCode, string(body))
+		return "", ErrInternal
 	}
 
 	// Set SSE headers on the response writer
@@ -137,10 +144,6 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			fmt.Fprintf(w, "data: [DONE]\n\n")
-			if canFlush {
-				flusher.Flush()
-			}
 			break
 		}
 

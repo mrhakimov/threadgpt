@@ -1,5 +1,12 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
+async function handleError(res: Response): Promise<never> {
+  if (res.status >= 500) {
+    throw new Error("Server error, please try again.")
+  }
+  throw new Error(await res.text())
+}
+
 function authHeaders(token: string) {
   return {
     "Content-Type": "application/json",
@@ -13,7 +20,7 @@ export async function auth(apiKey: string): Promise<{ token: string }> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ api_key: apiKey }),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
   return res.json()
 }
 
@@ -23,7 +30,7 @@ export async function initSession(token: string) {
     headers: authHeaders(token),
     body: JSON.stringify({}),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
   return res.json()
 }
 
@@ -31,7 +38,7 @@ export async function fetchSession(sessionId: string, token: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     headers: authHeaders(token),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
   return res.json()
 }
 
@@ -39,7 +46,7 @@ export async function fetchSessions(token: string) {
   const res = await fetch(`${API_URL}/api/sessions`, {
     headers: authHeaders(token),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
   return res.json()
 }
 
@@ -49,7 +56,7 @@ export async function createSession(token: string, name: string) {
     headers: authHeaders(token),
     body: JSON.stringify({ name }),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
   return res.json()
 }
 
@@ -59,7 +66,7 @@ export async function renameSession(token: string, sessionId: string, name: stri
     headers: authHeaders(token),
     body: JSON.stringify({ name }),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
 }
 
 export async function updateSystemPrompt(sessionId: string, systemPrompt: string, token: string) {
@@ -68,7 +75,7 @@ export async function updateSystemPrompt(sessionId: string, systemPrompt: string
     headers: authHeaders(token),
     body: JSON.stringify({ system_prompt: systemPrompt }),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
 }
 
 export async function deleteSession(token: string, sessionId: string) {
@@ -76,15 +83,14 @@ export async function deleteSession(token: string, sessionId: string) {
     method: "DELETE",
     headers: authHeaders(token),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
 }
 
 export async function fetchHistory(token: string, sessionId?: string) {
-  const url = sessionId
-    ? `${API_URL}/api/history?session_id=${sessionId}`
-    : `${API_URL}/api/history`
-  const res = await fetch(url, { headers: authHeaders(token) })
-  if (!res.ok) throw new Error(await res.text())
+  const headers: Record<string, string> = authHeaders(token)
+  if (sessionId) headers["X-Session-ID"] = sessionId
+  const res = await fetch(`${API_URL}/api/history`, { headers })
+  if (!res.ok) return handleError(res)
   return res.json()
 }
 
@@ -100,7 +106,7 @@ export async function sendChatMessage(
     headers: authHeaders(token),
     body: JSON.stringify({ user_message: userMessage, session_id: sessionId ?? "", force_new: forceNew ?? false }),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
   return consumeStream(res, onChunk)
 }
 
@@ -118,7 +124,7 @@ export async function sendThreadMessage(
       user_message: userMessage,
     }),
   })
-  if (!res.ok) throw new Error(await res.text())
+  if (!res.ok) return handleError(res)
   await consumeStream(res, onChunk)
 }
 

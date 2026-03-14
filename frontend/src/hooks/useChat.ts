@@ -110,9 +110,9 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
       if (resolvedSessionId && resolvedSessionId !== (sessionId || session?.session_id)) {
         setSession({ session_id: resolvedSessionId, is_new: false })
         onSessionResolvedRef.current?.(resolvedSessionId)
-      } else if (!session?.assistant_id) {
-        const sessionData = await initSession(token)
-        setSession(sessionData)
+      } else if (!session?.assistant_id && resolvedSessionId) {
+        const sessionData = await fetchSession(resolvedSessionId, token)
+        setSession({ session_id: resolvedSessionId, is_new: false, name: sessionData.name, system_prompt: sessionData.system_prompt })
       }
     } catch (e) {
       const msg = String(e)
