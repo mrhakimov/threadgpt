@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -48,6 +50,23 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using environment variables")
 	}
+
+	// Load or generate TOKEN_ENCRYPTION_KEY (32 bytes / 64 hex chars).
+	var encKey []byte
+	if keyHex := os.Getenv("TOKEN_ENCRYPTION_KEY"); keyHex != "" {
+		k, err := hex.DecodeString(keyHex)
+		if err != nil || len(k) != 32 {
+			log.Fatal("TOKEN_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)")
+		}
+		encKey = k
+	} else {
+		log.Println("WARNING: no TOKEN_ENCRYPTION_KEY set; generating ephemeral key — tokens will not survive restart")
+		encKey = make([]byte, 32)
+		if _, err := rand.Read(encKey); err != nil {
+			log.Fatal("failed to generate encryption key:", err)
+		}
+	}
+	handlers.SetEncryptionKey(encKey)
 
 	port := os.Getenv("PORT")
 	if port == "" {

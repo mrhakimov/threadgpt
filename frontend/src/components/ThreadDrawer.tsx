@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useCallback } from "react"
 import { Message } from "@/types"
 import { useThread } from "@/hooks/useThread"
 import MessageList from "./MessageList"
@@ -16,13 +16,21 @@ interface Props {
 }
 
 export default function ThreadDrawer({ token, parentMessage, onClose, onReply }: Props) {
-  const { messages, loading, sending, streamingContent, error, sendMessage } = useThread(
+  const { messages, hasMore, loadingMore, loading, sending, streamingContent, error, sendMessage, loadMore } = useThread(
     token,
     parentMessage.id,
     onReply ? () => onReply(parentMessage.id) : undefined
   )
   const drawerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (el.scrollTop === 0 && hasMore && !loadingMore) {
+      loadMore(el)
+    }
+  }, [hasMore, loadingMore, loadMore])
 
   // Close on Escape
   useEffect(() => {
@@ -63,7 +71,7 @@ export default function ThreadDrawer({ token, parentMessage, onClose, onReply }:
         </div>
 
         {/* Thread messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
+        <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4">
           {loading ? (
             <div className="flex gap-1 justify-center mt-8">
               <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.3s]" />
@@ -77,7 +85,7 @@ export default function ThreadDrawer({ token, parentMessage, onClose, onReply }:
                   Start a sub-thread by replying below.
                 </p>
               )}
-              <MessageList messages={messages} streamingContent={streamingContent} sending={sending} scrollRef={scrollRef} />
+              <MessageList messages={messages} streamingContent={streamingContent} sending={sending} scrollRef={scrollRef} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={loadMore} />
             </>
           )}
         </div>

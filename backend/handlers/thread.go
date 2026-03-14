@@ -58,8 +58,8 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up existing sub-thread messages for this parent
-	existing, err := db.GetThreadMessages(req.ParentMessageID)
+	// Look up existing sub-thread messages for this parent (fetch all to determine thread continuity)
+	existing, err := db.GetThreadMessages(req.ParentMessageID, 1000, 0)
 	if err != nil {
 		log.Printf("thread: GetThreadMessages error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -148,13 +148,14 @@ func handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := db.GetThreadMessages(parentMessageID)
+	limit, offset := parsePaginationParams(r, defaultMessagesLimit)
+	messages, err := db.GetThreadMessagesDesc(parentMessageID, limit, offset)
 	if err != nil {
-		log.Printf("thread: GetThreadMessages error: %v", err)
+		log.Printf("thread: GetThreadMessagesDesc error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messages)
+	json.NewEncoder(w).Encode(messagesResponse{Messages: messages, HasMore: len(messages) == limit})
 }

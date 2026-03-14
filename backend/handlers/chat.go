@@ -45,8 +45,13 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
+		// Session ID was provided but not found
+		if session == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
 		// Verify session belongs to this user
-		if session != nil && session.APIKeyHash != hash {
+		if session.APIKeyHash != hash {
 			http.Error(w, "unauthorized", http.StatusForbidden)
 			return
 		}

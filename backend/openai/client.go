@@ -16,6 +16,14 @@ import (
 // ErrInternal is returned when an OpenAI API call fails, hiding internal details from callers.
 var ErrInternal = errors.New("internal error")
 
+func truncateForLog(b []byte) string {
+	s := string(b)
+	if len(s) > 200 {
+		s = s[:200] + "...[truncated]"
+	}
+	return s
+}
+
 const baseURL = "https://api.openai.com/v1"
 
 func doRequest(apiKey, method, path string, body any, result any) error {
@@ -50,7 +58,7 @@ func doRequest(apiKey, method, path string, body any, result any) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		log.Printf("openai error %d: %s", resp.StatusCode, string(respBody))
+		log.Printf("openai error %d: %s", resp.StatusCode, truncateForLog(respBody))
 		return ErrInternal
 	}
 
@@ -121,7 +129,7 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("openai stream error %d: %s", resp.StatusCode, string(body))
+		log.Printf("openai stream error %d: %s", resp.StatusCode, truncateForLog(body))
 		return "", ErrInternal
 	}
 

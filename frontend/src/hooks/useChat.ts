@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { Message, Session } from "@/types"
 import { initSession, fetchHistory, fetchSession, sendChatMessage } from "@/lib/api"
 
+const PAGE_SIZE = 10
+
 // sessionId: string = load that session, null = blank new conversation, undefined = auto-detect latest
 export function useChat(token: string, sessionId?: string | null, onSessionResolved?: (sessionId: string) => void, onUnauthorized?: () => void) {
   const onSessionResolvedRef = useRef(onSessionResolved)
@@ -12,6 +14,8 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
   onUnauthorizedRef.current = onUnauthorized
 
   const [messages, setMessages] = useState<Message[]>([])
+  const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
@@ -26,6 +30,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
       try {
         setLoading(true)
         setMessages([])
+        setHasMoreMessages(false)
         setSession(null)
 
         if (sessionId === null) {
@@ -36,12 +41,13 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
 
         if (sessionId) {
           // Load a specific existing session
-          const [history, sessionData] = await Promise.all([
-            fetchHistory(token, sessionId),
+          const [historyData, sessionData] = await Promise.all([
+            fetchHistory(token, sessionId, PAGE_SIZE, 0),
             fetchSession(sessionId, token),
           ])
           if (!cancelled) {
-            setMessages(history)
+            setMessages(historyData.messages)
+            setHasMoreMessages(historyData.has_more)
             setSession({ session_id: sessionId, is_new: false, name: sessionData.name, system_prompt: sessionData.system_prompt })
           }
         } else {
@@ -51,9 +57,10 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
           setSession(sessionData)
 
           if (!sessionData.is_new) {
-            const history = await fetchHistory(token)
+            const historyData = await fetchHistory(token, undefined, PAGE_SIZE, 0)
             if (!cancelled) {
-              setMessages(history)
+              setMessages(historyData.messages)
+              setHasMoreMessages(historyData.has_more)
               if (sessionData.session_id) onSessionResolvedRef.current?.(sessionData.session_id)
             }
           }
@@ -75,6 +82,55 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     init()
     return () => { cancelled = true }
   }, [token, sessionId])
+
+  const scrollRefForPreserve = useRef<HTMLDivElement | null>(null)
+
+  const loadMoreMessages = useCallback(async (scrollEl?: HTMLDivElement | null) => {
+    if (loadingMore || !hasMoreMessages) return
+    const activeSessionId = sessionId || session?.session_id
+    if (!activeSessionId) return
+    setLoadingMore(true)
+    const el = scrollEl ?? scrollRefForPreserve.current
+    const prevScrollHeight = el?.scrollHeight ?? 0
+    try {
+      // Backend returns desc (newest first, then reversed to asc). offset from newest end.
+      // We already have `messages.length` newest messages; fetch the next older batch.
+      const historyData = await fetchHistory(token, activeSessionId, PAGE_SIZE, messages.length)
+      setMessages((prev) => [...historyData.messages, ...prev])
+      setHasMoreMessages(historyData.has_more)
+      // Preserve scroll position after prepend
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight - prevScrollHeight
+        })
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [token, sessionId, session, messages.length, loadingMore, hasMoreMessages])
+
+  const loadAllMessages = useCallback(async (scrollEl?: HTMLDivElement | null) => {
+    const activeSessionId = sessionId || session?.session_id
+    if (!activeSessionId) return
+    setLoadingMore(true)
+    try {
+      const historyData = await fetchHistory(token, activeSessionId, 10000, 0)
+      setMessages(historyData.messages)
+      setHasMoreMessages(false)
+      const el = scrollEl ?? scrollRefForPreserve.current
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollTop = 0
+        })
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [token, sessionId, session])
 
   const sendMessage = useCallback(async (content: string) => {
     if (sending) return
@@ -103,8 +159,9 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
 
       // Use the session ID returned from the stream; fall back to activeSessionId
       const resolvedSessionId = streamedSessionId ?? activeSessionId
-      const history = await fetchHistory(token, resolvedSessionId)
-      setMessages(history)
+      const historyData = await fetchHistory(token, resolvedSessionId, PAGE_SIZE, 0)
+      setMessages(historyData.messages)
+      setHasMoreMessages(historyData.has_more)
       setStreamingContent("")
 
       if (resolvedSessionId && resolvedSessionId !== (sessionId || session?.session_id)) {
@@ -141,5 +198,5 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     )
   }
 
-  return { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt, incrementReplyCount }
+  return { messages, hasMoreMessages, loadingMore, session, loading, sending, streamingContent, error, sendMessage, loadMoreMessages, loadAllMessages, updateLocalSystemPrompt, incrementReplyCount }
 }

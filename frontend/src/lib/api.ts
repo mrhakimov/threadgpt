@@ -1,10 +1,11 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 async function handleError(res: Response): Promise<never> {
-  if (res.status >= 500) {
-    throw new Error("Server error, please try again.")
-  }
-  throw new Error(await res.text())
+  if (res.status >= 500) throw new Error("Server error, please try again.")
+  if (res.status === 401 || res.status === 403) throw new Error("Unauthorized. Please re-enter your API key.")
+  if (res.status === 404) throw new Error("Not found.")
+  if (res.status === 429) throw new Error("Too many requests. Please wait a moment.")
+  throw new Error("Something went wrong.")
 }
 
 function authHeaders(token: string) {
@@ -42,8 +43,8 @@ export async function fetchSession(sessionId: string, token: string) {
   return res.json()
 }
 
-export async function fetchSessions(token: string) {
-  const res = await fetch(`${API_URL}/api/sessions`, {
+export async function fetchSessions(token: string, limit = 20, offset = 0): Promise<{ sessions: import("@/types").Session[], has_more: boolean }> {
+  const res = await fetch(`${API_URL}/api/sessions?limit=${limit}&offset=${offset}`, {
     headers: authHeaders(token),
   })
   if (!res.ok) return handleError(res)
@@ -86,10 +87,10 @@ export async function deleteSession(token: string, sessionId: string) {
   if (!res.ok) return handleError(res)
 }
 
-export async function fetchHistory(token: string, sessionId?: string) {
+export async function fetchHistory(token: string, sessionId?: string, limit = 50, offset = 0): Promise<{ messages: import("@/types").Message[], has_more: boolean }> {
   const headers: Record<string, string> = authHeaders(token)
   if (sessionId) headers["X-Session-ID"] = sessionId
-  const res = await fetch(`${API_URL}/api/history`, { headers })
+  const res = await fetch(`${API_URL}/api/history?limit=${limit}&offset=${offset}`, { headers })
   if (!res.ok) return handleError(res)
   return res.json()
 }
@@ -110,8 +111,8 @@ export async function sendChatMessage(
   return consumeStream(res, onChunk)
 }
 
-export async function fetchThreadMessages(token: string, parentMessageId: string) {
-  const res = await fetch(`${API_URL}/api/thread?parent_message_id=${encodeURIComponent(parentMessageId)}`, {
+export async function fetchThreadMessages(token: string, parentMessageId: string, limit = 50, offset = 0): Promise<{ messages: import("@/types").Message[], has_more: boolean }> {
+  const res = await fetch(`${API_URL}/api/thread?parent_message_id=${encodeURIComponent(parentMessageId)}&limit=${limit}&offset=${offset}`, {
     headers: authHeaders(token),
   })
   if (!res.ok) return handleError(res)

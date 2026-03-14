@@ -16,6 +16,14 @@ import (
 // ErrInternal is returned when a Supabase operation fails, hiding internal details from callers.
 var ErrInternal = errors.New("internal error")
 
+func truncateForLog(b []byte) string {
+	s := string(b)
+	if len(s) > 200 {
+		s = s[:200] + "...[truncated]"
+	}
+	return s
+}
+
 type Session struct {
 	ID           string  `json:"id"`
 	APIKeyHash   string  `json:"api_key_hash"`
@@ -86,7 +94,7 @@ func doRequest(method, path string, body any, result any) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		log.Printf("supabase error %d: %s", resp.StatusCode, string(respBody))
+		log.Printf("supabase error %d: %s", resp.StatusCode, truncateForLog(respBody))
 		return ErrInternal
 	}
 
@@ -124,9 +132,15 @@ func GetSessionByID(sessionID string) (*Session, error) {
 	return &sessions[0], nil
 }
 
-func GetSessions(apiKeyHash string) ([]Session, error) {
+func GetSessions(apiKeyHash string, limit, offset int) ([]Session, error) {
 	var sessions []Session
-	err := doRequest("GET", filterPath("sessions", url.Values{"api_key_hash": {"eq." + apiKeyHash}, "order": {"created_at.desc"}}), nil, &sessions)
+	params := url.Values{
+		"api_key_hash": {"eq." + apiKeyHash},
+		"order":        {"created_at.desc"},
+		"limit":        {fmt.Sprintf("%d", limit)},
+		"offset":       {fmt.Sprintf("%d", offset)},
+	}
+	err := doRequest("GET", filterPath("sessions", params), nil, &sessions)
 	return sessions, err
 }
 
@@ -178,10 +192,10 @@ func SetSystemPrompt(sessionID, systemPrompt string) error {
 		return fmt.Errorf("SetSystemPrompt: get first message: %w", err)
 	}
 	if len(msgs) == 0 {
-		fmt.Printf("SetSystemPrompt: no user message found for session %s\n", sessionID)
+		log.Printf("SetSystemPrompt: no user message found for session %s", sessionID)
 		return nil
 	}
-	fmt.Printf("SetSystemPrompt: updating message %s for session %s\n", msgs[0].ID, sessionID)
+	log.Printf("SetSystemPrompt: updating message %s for session %s", msgs[0].ID, sessionID)
 	if err := doRequest("PATCH", filterPath("messages", url.Values{"id": {"eq." + msgs[0].ID}}), map[string]string{"content": systemPrompt}, nil); err != nil {
 		return fmt.Errorf("SetSystemPrompt: update message content: %w", err)
 	}
@@ -217,10 +231,27 @@ func SaveMessage(sessionID, role, content string, openaiThreadID, parentMessageI
 	return &messages[0], nil
 }
 
-func GetMessages(sessionID string) ([]Message, error) {
+func GetMessages(sessionID string, limit, offset int) ([]Message, error) {
 	var messages []Message
-	if err := doRequest("GET", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}, "parent_message_id": {"is.null"}, "order": {"created_at.asc"}}), nil, &messages); err != nil {
+	params := url.Values{
+		"session_id":        {"eq." + sessionID},
+		"parent_message_id": {"is.null"},
+		"order":             {"created_at.asc"},
+		"limit":             {fmt.Sprintf("%d", limit)},
+		"offset":            {fmt.Sprintf("%d", offset)},
+	}
+	if err := doRequest("GET", filterPath("messages", params), nil, &messages); err != nil {
 		return nil, err
+	}
+
+	if len(messages) == 0 {
+		return messages, nil
+	}
+
+	// Collect IDs of the fetched messages to scope reply-count query.
+	ids := make([]string, len(messages))
+	for i, m := range messages {
+		ids[i] = m.ID
 	}
 
 	// Fetch user sub-thread messages for this session to compute follow-up counts.
@@ -241,10 +272,77 @@ func GetMessages(sessionID string) ([]Message, error) {
 	return messages, nil
 }
 
-func GetThreadMessages(parentMessageID string) ([]Message, error) {
+func GetThreadMessages(parentMessageID string, limit, offset int) ([]Message, error) {
 	var messages []Message
-	err := doRequest("GET", filterPath("messages", url.Values{"parent_message_id": {"eq." + parentMessageID}, "order": {"created_at.asc"}}), nil, &messages)
+	params := url.Values{
+		"parent_message_id": {"eq." + parentMessageID},
+		"order":             {"created_at.asc"},
+		"limit":             {fmt.Sprintf("%d", limit)},
+		"offset":            {fmt.Sprintf("%d", offset)},
+	}
+	err := doRequest("GET", filterPath("messages", params), nil, &messages)
 	return messages, err
+}
+
+// GetMessagesDesc fetches the newest `limit` main-thread messages (skipping `offset` from the newest end),
+// then reverses them to chronological order before returning.
+func GetMessagesDesc(sessionID string, limit, offset int) ([]Message, error) {
+	var messages []Message
+	params := url.Values{
+		"session_id":        {"eq." + sessionID},
+		"parent_message_id": {"is.null"},
+		"order":             {"created_at.desc"},
+		"limit":             {fmt.Sprintf("%d", limit)},
+		"offset":            {fmt.Sprintf("%d", offset)},
+	}
+	if err := doRequest("GET", filterPath("messages", params), nil, &messages); err != nil {
+		return nil, err
+	}
+
+	if len(messages) == 0 {
+		return messages, nil
+	}
+
+	// Reverse to chronological order for the client
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+
+	// Enrich with reply counts
+	var threadMsgs []Message
+	if err := doRequest("GET", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}, "parent_message_id": {"not.is.null"}, "role": {"eq.user"}}), nil, &threadMsgs); err == nil {
+		counts := make(map[string]int)
+		for _, m := range threadMsgs {
+			if m.ParentMessageID != nil {
+				counts[*m.ParentMessageID]++
+			}
+		}
+		for i := range messages {
+			messages[i].ReplyCount = counts[messages[i].ID]
+		}
+	}
+
+	return messages, nil
+}
+
+// GetThreadMessagesDesc fetches the newest `limit` sub-thread messages (skipping `offset` from newest),
+// then reverses to chronological order.
+func GetThreadMessagesDesc(parentMessageID string, limit, offset int) ([]Message, error) {
+	var messages []Message
+	params := url.Values{
+		"parent_message_id": {"eq." + parentMessageID},
+		"order":             {"created_at.desc"},
+		"limit":             {fmt.Sprintf("%d", limit)},
+		"offset":            {fmt.Sprintf("%d", offset)},
+	}
+	if err := doRequest("GET", filterPath("messages", params), nil, &messages); err != nil {
+		return nil, err
+	}
+	// Reverse to chronological order
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+	return messages, nil
 }
 
 func DeleteSession(sessionID string) error {

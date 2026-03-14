@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"threadgpt/db"
 	"threadgpt/openai"
 )
@@ -37,10 +38,25 @@ func HandleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+const defaultSessionsLimit = 20
+
 func handleListSessions(w http.ResponseWriter, r *http.Request) {
 	apiKeyHash := APIKeyHashFromContext(r.Context())
 
-	sessions, err := db.GetSessions(apiKeyHash)
+	limit := defaultSessionsLimit
+	offset := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	sessions, err := db.GetSessions(apiKeyHash, limit, offset)
 	if err != nil {
 		log.Printf("sessions: GetSessions error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -66,8 +82,12 @@ func handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	type response struct {
+		Sessions []item `json:"sessions"`
+		HasMore  bool   `json:"has_more"`
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	json.NewEncoder(w).Encode(response{Sessions: result, HasMore: len(sessions) == limit})
 }
 
 type CreateSessionRequest struct {
