@@ -7,3 +7,5 @@
 - do not store messages in db
 - input field should retain the form/layout when "edit" button clicked
 - add "copy" button
+- refactor frontend code - move common and repeating code to separate components
+- refactor backend code
