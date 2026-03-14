@@ -9,3 +9,4 @@
 - add "copy" button
 - refactor frontend code - move common and repeating code to separate components
 - refactor backend code
+- user identity is now identified by api key - change it to make sure we support multiple api keys
