@@ -15,6 +15,10 @@ type ThreadRequest struct {
 }
 
 func HandleThread(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		handleGetThread(w, r)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -122,4 +126,35 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func handleGetThread(w http.ResponseWriter, r *http.Request) {
+	hash := APIKeyHashFromContext(r.Context())
+	parentMessageID := r.URL.Query().Get("parent_message_id")
+	if parentMessageID == "" {
+		http.Error(w, "missing parent_message_id", http.StatusBadRequest)
+		return
+	}
+
+	parentMsg, err := db.GetMessageByID(parentMessageID)
+	if err != nil || parentMsg == nil {
+		http.Error(w, "parent message not found", http.StatusBadRequest)
+		return
+	}
+
+	session, err := db.GetSessionByID(parentMsg.SessionID)
+	if err != nil || session == nil || session.APIKeyHash != hash {
+		http.Error(w, "unauthorized", http.StatusForbidden)
+		return
+	}
+
+	messages, err := db.GetThreadMessages(parentMessageID)
+	if err != nil {
+		log.Printf("thread: GetThreadMessages error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(messages)
 }

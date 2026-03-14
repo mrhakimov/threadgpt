@@ -1,12 +1,21 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Message } from "@/types"
-import { sendThreadMessage } from "@/lib/api"
+import { fetchThreadMessages, sendThreadMessage } from "@/lib/api"
 
-export function useThread(token: string, parentMessageId: string) {
+export function useThread(token: string, parentMessageId: string, onReplySent?: () => void) {
   const [messages, setMessages] = useState<Message[]>([])
+  const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchThreadMessages(token, parentMessageId)
+      .then((msgs: Message[]) => { if (msgs?.length) setMessages(msgs) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [token, parentMessageId])
   const [streamingContent, setStreamingContent] = useState("")
   const [error, setError] = useState<string | null>(null)
 
@@ -42,13 +51,14 @@ export function useThread(token: string, parentMessageId: string) {
       }
       setMessages((prev) => [...prev, assistantMsg])
       setStreamingContent("")
+      onReplySent?.()
     } catch (e) {
       setError(String(e))
       setStreamingContent("")
     } finally {
       setSending(false)
     }
-  }, [token, parentMessageId, sending])
+  }, [token, parentMessageId, sending, onReplySent])
 
-  return { messages, sending, streamingContent, error, sendMessage }
+  return { messages, loading, sending, streamingContent, error, sendMessage }
 }

@@ -5,6 +5,7 @@ export interface Message {
   content: string
   openai_thread_id?: string
   parent_message_id?: string
+  reply_count?: number
   created_at: string
 }
 

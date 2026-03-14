@@ -110,6 +110,14 @@ export async function sendChatMessage(
   return consumeStream(res, onChunk)
 }
 
+export async function fetchThreadMessages(token: string, parentMessageId: string) {
+  const res = await fetch(`${API_URL}/api/thread?parent_message_id=${encodeURIComponent(parentMessageId)}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) return handleError(res)
+  return res.json()
+}
+
 export async function sendThreadMessage(
   token: string,
   parentMessageId: string,

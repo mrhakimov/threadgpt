@@ -26,13 +26,14 @@ type Session struct {
 }
 
 type Message struct {
-	ID             string  `json:"id"`
-	SessionID      string  `json:"session_id"`
-	Role           string  `json:"role"`
-	Content        string  `json:"content"`
-	OpenAIThreadID *string `json:"openai_thread_id"`
+	ID              string  `json:"id"`
+	SessionID       string  `json:"session_id"`
+	Role            string  `json:"role"`
+	Content         string  `json:"content"`
+	OpenAIThreadID  *string `json:"openai_thread_id"`
 	ParentMessageID *string `json:"parent_message_id"`
-	CreatedAt      string  `json:"created_at"`
+	ReplyCount      int     `json:"reply_count"`
+	CreatedAt       string  `json:"created_at"`
 }
 
 func supabaseURL() string {
@@ -218,8 +219,26 @@ func SaveMessage(sessionID, role, content string, openaiThreadID, parentMessageI
 
 func GetMessages(sessionID string) ([]Message, error) {
 	var messages []Message
-	err := doRequest("GET", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}, "parent_message_id": {"is.null"}, "order": {"created_at.asc"}}), nil, &messages)
-	return messages, err
+	if err := doRequest("GET", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}, "parent_message_id": {"is.null"}, "order": {"created_at.asc"}}), nil, &messages); err != nil {
+		return nil, err
+	}
+
+	// Fetch user sub-thread messages for this session to compute follow-up counts.
+	var threadMsgs []Message
+	if err := doRequest("GET", filterPath("messages", url.Values{"session_id": {"eq." + sessionID}, "parent_message_id": {"not.is.null"}, "role": {"eq.user"}}), nil, &threadMsgs); err == nil {
+		log.Printf("follow-up count query returned %d messages", len(threadMsgs))
+		counts := make(map[string]int)
+		for _, m := range threadMsgs {
+			if m.ParentMessageID != nil {
+				counts[*m.ParentMessageID]++
+			}
+		}
+		for i := range messages {
+			messages[i].ReplyCount = counts[messages[i].ID]
+		}
+	}
+
+	return messages, nil
 }
 
 func GetThreadMessages(parentMessageID string) ([]Message, error) {

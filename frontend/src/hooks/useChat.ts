@@ -135,5 +135,11 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     })
   }
 
-  return { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt }
+  function incrementReplyCount(messageId: string, by: number) {
+    setMessages((prev) =>
+      prev.map((m) => m.id === messageId ? { ...m, reply_count: (m.reply_count ?? 0) + by } : m)
+    )
+  }
+
+  return { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt, incrementReplyCount }
 }

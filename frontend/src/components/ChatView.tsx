@@ -20,7 +20,7 @@ interface Props {
 }
 
 export default function ChatView({ token, sessionId, onSelectSession, onUnauthorized }: Props) {
-  const { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt } =
+  const { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt, incrementReplyCount } =
     useChat(token, sessionId, (resolvedId) => {
       if (!sessionId) onSelectSession(resolvedId)
     }, onUnauthorized)
@@ -121,6 +121,7 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
                 updateLocalSystemPrompt(content)
               } : undefined}
               scrollRef={scrollRef}
+              showSystemPrompt
             />
           )}
         </div>
@@ -165,6 +166,7 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
           token={token}
           parentMessage={threadParent}
           onClose={() => setThreadParent(null)}
+          onReply={(parentId) => incrementReplyCount(parentId, 1)}
         />
       )}
 

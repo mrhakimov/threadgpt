@@ -149,7 +149,9 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
             onClick={() => onReply(message)}
           >
             <MessageSquare className="h-3 w-3 mr-1" />
-            Reply
+            {message.reply_count && message.reply_count > 0
+              ? message.reply_count === 1 ? "1 follow-up" : `${message.reply_count} follow-ups`
+              : "Follow up"}
           </Button>
         )}
       </div>

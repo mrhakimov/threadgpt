@@ -12,14 +12,17 @@ interface Props {
   token: string
   parentMessage: Message
   onClose: () => void
+  onReply?: (parentMessageId: string) => void
 }
 
-export default function ThreadDrawer({ token, parentMessage, onClose }: Props) {
-  const { messages, sending, streamingContent, error, sendMessage } = useThread(
+export default function ThreadDrawer({ token, parentMessage, onClose, onReply }: Props) {
+  const { messages, loading, sending, streamingContent, error, sendMessage } = useThread(
     token,
-    parentMessage.id
+    parentMessage.id,
+    onReply ? () => onReply(parentMessage.id) : undefined
   )
   const drawerRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Close on Escape
   useEffect(() => {
@@ -60,13 +63,23 @@ export default function ThreadDrawer({ token, parentMessage, onClose }: Props) {
         </div>
 
         {/* Thread messages */}
-        <div className="flex-1 overflow-y-auto px-4">
-          {messages.length === 0 && !streamingContent && (
-            <p className="text-sm text-muted-foreground text-center mt-8">
-              Start a sub-thread by replying below.
-            </p>
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
+          {loading ? (
+            <div className="flex gap-1 justify-center mt-8">
+              <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce" />
+            </div>
+          ) : (
+            <>
+              {messages.length === 0 && !streamingContent && (
+                <p className="text-sm text-muted-foreground text-center mt-8">
+                  Start a sub-thread by replying below.
+                </p>
+              )}
+              <MessageList messages={messages} streamingContent={streamingContent} sending={sending} scrollRef={scrollRef} />
+            </>
           )}
-          <MessageList messages={messages} streamingContent={streamingContent} />
         </div>
 
         {error && (
@@ -79,6 +92,7 @@ export default function ThreadDrawer({ token, parentMessage, onClose }: Props) {
             onSend={sendMessage}
             disabled={sending}
             placeholder="Reply in thread..."
+            focusTrigger={1}
           />
         </div>
       </div>
