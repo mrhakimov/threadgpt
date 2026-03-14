@@ -68,7 +68,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
       } catch (e) {
         if (!cancelled) {
           const msg = String(e)
-          if (msg.includes("unauthorized") || msg.includes("401")) {
+          if (msg.toLowerCase().includes("unauthorized") || msg.includes("401")) {
             onUnauthorizedRef.current?.()
           } else {
             setError(msg)
@@ -173,7 +173,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
       }
     } catch (e) {
       const msg = String(e)
-      if (msg.includes("unauthorized") || msg.includes("401")) {
+      if (msg.toLowerCase().includes("unauthorized") || msg.includes("401")) {
         onUnauthorizedRef.current?.()
       } else {
         setError(msg)

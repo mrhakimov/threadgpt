@@ -65,6 +65,15 @@ export default function ApiKeyGate({ onSubmit }: Props) {
         >
           @omtiness
         </a>
+        {" · "}
+        <a
+          href="https://github.com/mrhakimov/threadgpt"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:text-foreground transition-colors"
+        >
+          GitHub
+        </a>
       </p>
     </div>
   )

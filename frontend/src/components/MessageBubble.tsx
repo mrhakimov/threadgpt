@@ -19,6 +19,9 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
   const [showTooltip, setShowTooltip] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(message.content)
+  const [spanHeight, setSpanHeight] = useState<number | null>(null)
+  const [bubbleWidth, setBubbleWidth] = useState<number | null>(null)
+  const bubbleRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!editing) setEditValue(message.content)
@@ -27,6 +30,7 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
   const [saveError, setSaveError] = useState<string | null>(null)
   const tooltipRef = useRef<HTMLSpanElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const spanRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
     if (!showTooltip) return
@@ -41,8 +45,9 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
 
   useEffect(() => {
     if (editing && textareaRef.current) {
-      textareaRef.current.focus()
-      textareaRef.current.selectionStart = textareaRef.current.value.length
+      const ta = textareaRef.current
+      ta.focus()
+      ta.selectionStart = ta.value.length
     }
   }, [editing])
 
@@ -60,12 +65,16 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
       setSaveError(String(e))
     } finally {
       setSaving(false)
+      setSpanHeight(null)
+      setBubbleWidth(null)
     }
   }
 
   function handleCancel() {
     setEditValue(message.content)
     setEditing(false)
+    setSpanHeight(null)
+    setBubbleWidth(null)
   }
 
   return (
@@ -74,6 +83,8 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
     >
       <div className={cn("group relative max-w-[80%]", isAssistant ? "items-start" : "items-end")}>
         <div
+          ref={bubbleRef}
+          style={bubbleWidth != null ? { width: bubbleWidth } : undefined}
           className={cn(
             "rounded-2xl px-4 py-3 text-sm leading-relaxed",
             isAssistant
@@ -83,21 +94,25 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
               : "bg-primary text-primary-foreground rounded-tr-sm"
           )}
         >
-          {editing ? (
+          <span ref={spanRef} className={cn("whitespace-pre-wrap", editing && "hidden")}>{message.content}</span>
+          {editing && (
             <textarea
               ref={textareaRef}
               value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
+              onChange={(e) => {
+                setEditValue(e.target.value)
+                const ta = e.currentTarget
+                ta.style.height = "auto"
+                ta.style.height = ta.scrollHeight + "px"
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") handleCancel()
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSave()
               }}
-              className="w-full min-w-[240px] bg-transparent resize-none outline-none whitespace-pre-wrap"
-              rows={Math.max(3, editValue.split("\n").length)}
+              className="w-full bg-transparent resize-none outline-none whitespace-pre-wrap overflow-hidden p-0 m-0 border-0 leading-relaxed text-sm"
+              style={{ height: spanHeight != null ? spanHeight + 3 + "px" : "auto" }}
               disabled={saving}
             />
-          ) : (
-            <span className="whitespace-pre-wrap">{message.content}</span>
           )}
           {saveError && (
             <p className="text-xs text-destructive mt-1">{saveError}</p>
@@ -116,7 +131,11 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
               ) : (
                 onEditSystemPrompt && (
                   <button
-                    onClick={() => setEditing(true)}
+                    onClick={() => {
+                      if (spanRef.current) setSpanHeight(spanRef.current.offsetHeight)
+                      if (bubbleRef.current) setBubbleWidth(bubbleRef.current.offsetWidth)
+                      setEditing(true)
+                    }}
                     className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
                   >
                     <Pencil className="h-3.5 w-3.5" />
