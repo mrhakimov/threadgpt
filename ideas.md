@@ -1,6 +1,9 @@
-- support multiple threads
-- reply button is misplaced
-- scroll to bottom button
-- scaffolding for logo
-- scaffolding for input
 - stateless feature-requests using telegram as a storage
+- pagination for sub-threads
+- double input borders
+- preserve sidebar state on refreshing the page
+- sub-threads redesign
+- settings redesign
+- do not store messages in db
+- input field should retain the form/layout when "edit" button clicked
+- add "copy" button
