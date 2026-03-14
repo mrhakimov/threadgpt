@@ -192,6 +192,13 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 	return fullText.String(), nil
 }
 
+func UpdateAssistantInstructions(apiKey, assistantID, instructions string) error {
+	payload := map[string]any{
+		"instructions": instructions,
+	}
+	return doRequest(apiKey, "POST", "/assistants/"+assistantID, payload, nil)
+}
+
 // AddMessageToThread adds a message to an existing thread (used for sub-threads with assistant role)
 func AddAssistantMessage(apiKey, threadID, content string) error {
 	payload := map[string]any{

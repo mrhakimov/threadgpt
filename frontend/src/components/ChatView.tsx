@@ -10,6 +10,7 @@ import ConversationMenu from "./ConversationMenu"
 import { Button } from "@/components/ui/button"
 import { ChevronDown, Settings } from "lucide-react"
 import SettingsPage from "./SettingsPage"
+import { updateSystemPrompt } from "@/lib/api"
 
 interface Props {
   apiKey: string
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) {
-  const { messages, session, loading, sending, streamingContent, error, sendMessage } =
+  const { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt } =
     useChat(apiKey, sessionId, (resolvedId) => {
       if (!sessionId) onSelectSession(resolvedId)
     })
@@ -113,6 +114,10 @@ export default function ChatView({ apiKey, sessionId, onSelectSession }: Props) 
               messages={messages}
               streamingContent={streamingContent}
               onReply={setThreadParent}
+              onEditSystemPrompt={session?.session_id ? async (content) => {
+                await updateSystemPrompt(session.session_id!, content, apiKey)
+                updateLocalSystemPrompt(content)
+              } : undefined}
               scrollRef={scrollRef}
             />
           )}

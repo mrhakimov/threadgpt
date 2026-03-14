@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"threadgpt/db"
+	"threadgpt/openai"
 )
 
 type SessionRequest struct {
@@ -136,14 +137,43 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 	case http.MethodPatch:
 		var req struct {
-			Name string `json:"name"`
+			Name         string `json:"name"`
+			SystemPrompt string `json:"system_prompt"`
+			APIKey       string `json:"api_key"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		if err := db.RenameSession(sessionID, req.Name); err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+		if req.Name != "" {
+			if err := db.RenameSession(sessionID, req.Name); err != nil {
+				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if req.SystemPrompt != "" {
+			if req.APIKey == "" {
+				http.Error(w, "api_key required to update system prompt", http.StatusBadRequest)
+				return
+			}
+			session, err := db.GetSessionByID(sessionID)
+			if err != nil || session == nil {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
+			if session.AssistantID != nil {
+				if err := openai.UpdateAssistantInstructions(req.APIKey, *session.AssistantID, req.SystemPrompt); err != nil {
+					http.Error(w, "openai error: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+			if err := db.SetSystemPrompt(sessionID, req.SystemPrompt); err != nil {
+				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		if req.Name == "" && req.SystemPrompt == "" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

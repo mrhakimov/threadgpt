@@ -42,6 +42,15 @@ export async function renameSession(sessionId: string, name: string) {
   if (!res.ok) throw new Error(await res.text())
 }
 
+export async function updateSystemPrompt(sessionId: string, systemPrompt: string, apiKey: string) {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system_prompt: systemPrompt, api_key: apiKey }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
 export async function deleteSession(sessionId: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     method: "DELETE",

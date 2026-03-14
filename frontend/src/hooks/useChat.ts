@@ -113,5 +113,9 @@ export function useChat(apiKey: string, sessionId?: string | null, onSessionReso
     }
   }, [apiKey, sending, session, sessionId])
 
-  return { messages, session, loading, sending, streamingContent, error, sendMessage }
+  function updateLocalSystemPrompt(content: string) {
+    setSession((prev) => prev ? { ...prev, system_prompt: content } : prev)
+  }
+
+  return { messages, session, loading, sending, streamingContent, error, sendMessage, updateLocalSystemPrompt }
 }

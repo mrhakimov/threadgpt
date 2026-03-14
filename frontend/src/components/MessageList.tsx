@@ -8,10 +8,11 @@ interface Props {
   messages: Message[]
   streamingContent?: string
   onReply?: (message: Message) => void
+  onEditSystemPrompt?: (newContent: string) => Promise<void>
   scrollRef?: RefObject<HTMLDivElement>
 }
 
-export default function MessageList({ messages, streamingContent, onReply, scrollRef }: Props) {
+export default function MessageList({ messages, streamingContent, onReply, onEditSystemPrompt, scrollRef }: Props) {
   useEffect(() => {
     const el = scrollRef?.current
     if (!el) return
@@ -25,7 +26,7 @@ export default function MessageList({ messages, streamingContent, onReply, scrol
   return (
     <div className="flex flex-col gap-4 py-4">
       {messages.map((msg, i) => (
-        <MessageBubble key={msg.id} message={msg} onReply={onReply} isSystemPrompt={i === 0 && msg.role === "user"} />
+        <MessageBubble key={msg.id} message={msg} onReply={onReply} isSystemPrompt={i === 0 && msg.role === "user"} onEditSystemPrompt={i === 0 && msg.role === "user" ? onEditSystemPrompt : undefined} />
       ))}
 
       {streamingContent && (
