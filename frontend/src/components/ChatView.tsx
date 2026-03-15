@@ -66,7 +66,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
       }
       setShowLoading(false)
     }
-  }, [loading])
+  }, [loading, sessionId])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current

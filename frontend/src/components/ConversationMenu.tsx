@@ -20,6 +20,7 @@ interface Props {
 const SESSIONS_PAGE_SIZE = 20
 
 export default function ConversationMenu({ activeSessionId, isCurrentEmpty, collapsed, onToggle, onSelectSession, onRenameActive, refreshTrigger }: Props) {
+  const [expanded, setExpanded] = useState(!collapsed)
   const [sessions, setSessions] = useState<Session[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(false)
@@ -34,7 +35,16 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!collapsed) loadSessions()
+    if (!collapsed) {
+      setSessions([])
+      const t = setTimeout(() => {
+        setExpanded(true)
+        loadSessions()
+      }, 200)
+      return () => clearTimeout(t)
+    } else {
+      setExpanded(false)
+    }
   }, [collapsed])
 
   useEffect(() => {
@@ -154,31 +164,35 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
   return (
     <aside
       className={`shrink-0 flex flex-col border-r bg-background transition-all duration-200 ${
-        collapsed ? "w-12" : "w-64"
+        collapsed ? "w-[56px]" : "w-64"
       }`}
     >
       {/* Toggle button */}
-      <div className={`flex items-center border-b px-2 py-3 ${collapsed ? "justify-center" : "justify-between"}`}>
-        {!collapsed && <span className="text-sm font-medium pl-1">Conversations</span>}
-        <Button variant="ghost" size="icon" onClick={onToggle} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+      <div className="flex items-center border-b px-2 py-3 gap-1">
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={onToggle} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
           {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+        </Button>
+        {!collapsed && <span className="text-sm font-medium">Conversations</span>}
+      </div>
+
+      {/* New conversation button — always rendered so it animates with the sidebar */}
+      <div className="flex items-center px-2 py-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleNewConversation}
+          disabled={isCurrentEmpty}
+          title="New conversation"
+          className={`w-full justify-start gap-2 overflow-hidden ${collapsed ? "border-transparent bg-transparent shadow-none hover:bg-accent" : ""}`}
+        >
+          <Plus className="h-4 w-4 shrink-0" />
+          <span className={`truncate ${collapsed ? "hidden" : ""}`}>New conversation</span>
         </Button>
       </div>
 
-      {/* Sidebar content */}
-      {!collapsed && (
-        <div className="flex flex-col flex-1 overflow-hidden p-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start gap-2 mb-2"
-            onClick={handleNewConversation}
-            disabled={isCurrentEmpty}
-          >
-            <Plus className="h-4 w-4" />
-            New conversation
-          </Button>
-
+      {/* Sidebar content (session list) */}
+      {expanded && (
+        <div className="flex flex-col flex-1 overflow-hidden p-2 pt-1">
           {error && <p className="text-xs text-destructive mb-2 px-1">{error}</p>}
 
           <div ref={listRef} onScroll={handleListScroll} className="flex-1 overflow-y-auto space-y-1">
@@ -266,21 +280,6 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Collapsed: show new conversation icon only */}
-      {collapsed && (
-        <div className="flex flex-col items-center gap-1 p-2 pt-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleNewConversation}
-            disabled={isCurrentEmpty}
-            title="New conversation"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
         </div>
       )}
     </aside>
