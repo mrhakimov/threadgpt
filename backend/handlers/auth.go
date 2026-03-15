@@ -111,6 +111,8 @@ var (
 
 const maxChatPerMinute = 60
 
+const maxRateLimitMapSize = 50000
+
 // uuidRe matches standard UUID v4 format (case-insensitive).
 var uuidRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
@@ -242,6 +244,13 @@ func checkRateLimit(key string, limit int, mu *sync.Mutex, m map[string][]time.T
 	if len(filtered) >= limit {
 		return false
 	}
+	if _, exists := m[key]; !exists && len(m) >= maxRateLimitMapSize {
+		// Evict one arbitrary entry to cap memory usage
+		for k := range m {
+			delete(m, k)
+			break
+		}
+	}
 	m[key] = append(filtered, now)
 	return true
 }
@@ -325,7 +334,7 @@ func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleLogout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}

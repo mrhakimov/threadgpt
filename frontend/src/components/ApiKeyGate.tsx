@@ -4,16 +4,28 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { API_URL } from "@/lib/api"
 
 interface Props {
   onSubmit: (apiKey: string) => Promise<void>
 }
 
-const isInsecureContext =
+const frontendInsecure =
   typeof window !== "undefined" &&
   window.location.protocol !== "https:" &&
   window.location.hostname !== "localhost" &&
   window.location.hostname !== "127.0.0.1"
+
+const backendInsecure = (() => {
+  try {
+    const url = new URL(API_URL)
+    return url.protocol === "http:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1"
+  } catch {
+    return false
+  }
+})()
+
+const isInsecureContext = frontendInsecure || backendInsecure
 
 export default function ApiKeyGate({ onSubmit }: Props) {
   const [value, setValue] = useState("")
@@ -46,7 +58,7 @@ export default function ApiKeyGate({ onSubmit }: Props) {
         <CardHeader>
           <CardTitle>ThreadGPT</CardTitle>
           <CardDescription>
-            Enter your OpenAI API key to start chatting. Your key is encrypted in server memory for your session and never written to disk or stored in the database.
+            Enter your OpenAI API key to start chatting. Your key is sent to the server over your connection, encrypted in server memory for your session, and never written to disk or stored in the database.
           </CardDescription>
         </CardHeader>
         <CardContent>

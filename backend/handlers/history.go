@@ -55,7 +55,7 @@ func parsePaginationParams(r *http.Request, defaultLimit int) (limit, offset int
 		}
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 100000 {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 10000 {
 			offset = n
 		}
 	}
