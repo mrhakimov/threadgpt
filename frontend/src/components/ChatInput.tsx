@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Send } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface Props {
   onSend: (message: string) => void
@@ -14,6 +14,7 @@ interface Props {
 
 export default function ChatInput({ onSend, disabled, placeholder, focusTrigger }: Props) {
   const [value, setValue] = useState("")
+  const [isFocused, setIsFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -41,25 +42,44 @@ export default function ChatInput({ onSend, disabled, placeholder, focusTrigger 
     setValue("")
   }
 
+  const hasContent = value.trim().length > 0
+
   return (
-    <div className="flex gap-2 items-end">
+    <div
+      onClick={() => textareaRef.current?.focus()}
+      className={cn(
+        "relative flex flex-col rounded-2xl border bg-muted/50 px-4 pt-3 pb-3 transition-shadow cursor-text",
+        isFocused
+          ? "shadow-[0_0_0_2px_hsl(var(--ring))]"
+          : "shadow-sm hover:shadow-md"
+      )}
+    >
       <Textarea
         ref={textareaRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={placeholder ?? "Send a message... (Enter to send, Shift+Enter for newline)"}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        placeholder={placeholder ?? "Message ThreadGPT"}
         rows={1}
-        className="resize-none min-h-[44px] max-h-[160px] overflow-y-auto"
+        className="resize-none min-h-[24px] max-h-[160px] overflow-y-auto border-0 bg-transparent shadow-none p-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm leading-relaxed cursor-text"
       />
-      <Button
-        size="icon"
-        onClick={handleSend}
-        disabled={disabled || !value.trim()}
-        className="shrink-0 h-11 w-11"
-      >
-        <Send className="h-4 w-4" />
-      </Button>
+      <div className="flex justify-end mt-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); handleSend() }}
+          disabled={disabled || !hasContent}
+          aria-label="Send message"
+          className={cn(
+            "inline-flex items-center justify-center h-8 w-8 rounded-lg",
+            "bg-primary text-primary-foreground",
+            "transition-opacity duration-150",
+            hasContent && !disabled ? "opacity-100 cursor-pointer" : "opacity-0 pointer-events-none"
+          )}
+        >
+          <Send className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   )
 }

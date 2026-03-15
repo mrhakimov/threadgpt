@@ -101,8 +101,8 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
             isAssistant
               ? "bg-muted text-foreground rounded-tl-sm py-3"
               : isSystemPrompt
-              ? "bg-muted/60 text-foreground border border-border rounded-tr-sm py-3"
-              : "bg-primary text-primary-foreground rounded-tr-sm py-3"
+              ? "bg-muted/60 text-foreground border border-border rounded-tr-sm py-3 min-w-[6rem]"
+              : "bg-secondary text-secondary-foreground rounded-tr-sm py-3"
           )}
         >
           {/* Agent message: copy button top-right, always visible */}
