@@ -7,3 +7,4 @@
 - user identity is now identified by api key - change it to make sure we support multiple api keys
 - add donation link
 - get rid of full refresh when clicking "New conversation" and sending the first message
+- choose colors from here: https://coolors.co/palette/f8f9fa-e9ecef-dee2e6-ced4da-adb5bd-6c757d-495057-343a40-212529
