@@ -191,7 +191,7 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
           <Button
             variant="ghost"
             size="sm"
-            className="mt-1 h-7 w-full justify-start px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="mt-0.5 h-6 w-full justify-start px-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg"
             onClick={() => onReply(message)}
           >
             <MessageSquare className="h-3 w-3 mr-1" />
