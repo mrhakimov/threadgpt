@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown, Loader2, Settings } from "lucide-react"
 import SettingsPage from "./SettingsPage"
 import { updateSystemPrompt } from "@/lib/api"
+import { MIN_LOADING_MS } from "@/lib/constants"
 
 interface Props {
   sessionId: string | null | undefined
@@ -26,6 +27,8 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
       setSidebarRefreshTrigger((n) => n + 1)
     }, onUnauthorized)
   const [threadParent, setThreadParent] = useState<Message | null>(null)
+  const [showLoading, setShowLoading] = useState(true)
+  const loadStartRef = useRef(Date.now())
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [focusTrigger, setFocusTrigger] = useState(0)
@@ -49,7 +52,21 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
     setThreadParent(null)
     setFocusTrigger((n) => n + 1)
     setOverrideName(null)
+    setShowLoading(true)
+    loadStartRef.current = Date.now()
   }, [sessionId])
+
+  useEffect(() => {
+    if (!loading) {
+      const elapsed = Date.now() - loadStartRef.current
+      const remaining = MIN_LOADING_MS - elapsed
+      if (remaining > 0) {
+        const t = setTimeout(() => setShowLoading(false), remaining)
+        return () => clearTimeout(t)
+      }
+      setShowLoading(false)
+    }
+  }, [loading])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -137,7 +154,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         {/* Messages */}
         <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 relative">
           <div className="max-w-3xl mx-auto w-full h-full">
-            {loading ? (
+            {showLoading ? (
               <div className="flex items-center justify-center h-full">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>

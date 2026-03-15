@@ -8,6 +8,7 @@ import MessageList from "./MessageList"
 import ChatInput from "./ChatInput"
 import { Button } from "@/components/ui/button"
 import { X, Loader2 } from "lucide-react"
+import { MIN_LOADING_MS } from "@/lib/constants"
 
 interface Props {
   parentMessage: Message
@@ -17,7 +18,6 @@ interface Props {
   onAbortRef?: (abortFn: (() => void) | null) => void
 }
 
-const MIN_LOADING_MS = 400
 const DURATION = 300
 const SLIDE_IN_MS = 300
 
@@ -29,17 +29,26 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
   const scrollRef = useRef<HTMLDivElement>(null)
   const [closing, setClosing] = useState(false)
   const [showLoading, setShowLoading] = useState(true)
-  const loadStartRef = useRef(Date.now())
+  const minLoadingDoneRef = useRef(false)
+  const dataLoadedRef = useRef(false)
+
+  // After drawer opens, show spinner for MIN_LOADING_MS, then hide if data is also ready
+  useEffect(() => {
+    const openTimer = setTimeout(() => {
+      setShowLoading(true)
+      const minTimer = setTimeout(() => {
+        minLoadingDoneRef.current = true
+        if (dataLoadedRef.current) setShowLoading(false)
+      }, MIN_LOADING_MS)
+      return () => clearTimeout(minTimer)
+    }, SLIDE_IN_MS)
+    return () => clearTimeout(openTimer)
+  }, [])
 
   useEffect(() => {
     if (!loading) {
-      const elapsed = Date.now() - loadStartRef.current
-      const remaining = Math.max(MIN_LOADING_MS, SLIDE_IN_MS) - elapsed
-      if (remaining > 0) {
-        const t = setTimeout(() => setShowLoading(false), remaining)
-        return () => clearTimeout(t)
-      }
-      setShowLoading(false)
+      dataLoadedRef.current = true
+      if (minLoadingDoneRef.current) setShowLoading(false)
     }
   }, [loading])
 

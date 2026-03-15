@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, X, Pencil, Trash2, Check, Loader2 } from "lucide-react"
 import { fetchSessions, renameSession, deleteSession } from "@/lib/api"
 import { Session } from "@/types"
+import { MIN_LOADING_MS } from "@/lib/constants"
 
 interface Props {
   activeSessionId: string | null
@@ -22,6 +23,8 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
   const [sessions, setSessions] = useState<Session[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(false)
+  const [showLoadingSessions, setShowLoadingSessions] = useState(false)
+  const loadSessionsStartRef = useRef(0)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -43,7 +46,9 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
   }, [editingId])
 
   async function loadSessions() {
+    loadSessionsStartRef.current = Date.now()
     setLoadingSessions(true)
+    setShowLoadingSessions(true)
     try {
       const data = await fetchSessions(SESSIONS_PAGE_SIZE, 0)
       setSessions(data.sessions)
@@ -54,6 +59,18 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
       setLoadingSessions(false)
     }
   }
+
+  useEffect(() => {
+    if (!loadingSessions) {
+      const elapsed = Date.now() - loadSessionsStartRef.current
+      const remaining = MIN_LOADING_MS - elapsed
+      if (remaining > 0) {
+        const t = setTimeout(() => setShowLoadingSessions(false), remaining)
+        return () => clearTimeout(t)
+      }
+      setShowLoadingSessions(false)
+    }
+  }, [loadingSessions])
 
   async function loadMoreSessions() {
     if (loadingMore || !hasMore) return
@@ -165,7 +182,7 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
           {error && <p className="text-xs text-destructive mb-2 px-1">{error}</p>}
 
           <div ref={listRef} onScroll={handleListScroll} className="flex-1 overflow-y-auto space-y-1">
-            {loadingSessions ? (
+            {showLoadingSessions ? (
               <div className="flex justify-center py-4">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
