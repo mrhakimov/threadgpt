@@ -56,7 +56,8 @@ export default function MessageList({ messages, streamingContent, sending, onRep
       )}
 
       {messages.map((msg, i) => {
-        const isContextSetConfirmation = msg.role === "assistant" && !msg.openai_thread_id
+        // The context-set confirmation is the first assistant reply (index 1, no more pages above)
+        const isContextSetConfirmation = msg.role === "assistant" && !hasMore && i === 1
         return (
           <MessageBubble key={msg.id} message={msg} onReply={isContextSetConfirmation ? undefined : onReply} isSystemPrompt={showSystemPrompt && !hasMore && i === 0 && msg.role === "user"} onEditSystemPrompt={showSystemPrompt && !hasMore && i === 0 && msg.role === "user" ? onEditSystemPrompt : undefined} />
         )

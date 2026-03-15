@@ -9,15 +9,13 @@ import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
 
 interface Props {
-  token: string
   parentMessage: Message
   onClose: () => void
   onReply?: (parentMessageId: string) => void
 }
 
-export default function ThreadDrawer({ token, parentMessage, onClose, onReply }: Props) {
+export default function ThreadDrawer({ parentMessage, onClose, onReply }: Props) {
   const { messages, hasMore, loadingMore, loading, sending, streamingContent, error, sendMessage, loadMore } = useThread(
-    token,
     parentMessage.id,
     onReply ? () => onReply(parentMessage.id) : undefined
   )

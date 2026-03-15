@@ -7,7 +7,6 @@ import { fetchSessions, renameSession, deleteSession } from "@/lib/api"
 import { Session } from "@/types"
 
 interface Props {
-  token: string
   activeSessionId: string | null
   isCurrentEmpty?: boolean
   collapsed: boolean
@@ -18,7 +17,7 @@ interface Props {
 
 const SESSIONS_PAGE_SIZE = 20
 
-export default function ConversationMenu({ token, activeSessionId, isCurrentEmpty, collapsed, onToggle, onSelectSession, onRenameActive }: Props) {
+export default function ConversationMenu({ activeSessionId, isCurrentEmpty, collapsed, onToggle, onSelectSession, onRenameActive }: Props) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(false)
@@ -41,7 +40,7 @@ export default function ConversationMenu({ token, activeSessionId, isCurrentEmpt
   async function loadSessions() {
     setLoadingSessions(true)
     try {
-      const data = await fetchSessions(token, SESSIONS_PAGE_SIZE, 0)
+      const data = await fetchSessions(SESSIONS_PAGE_SIZE, 0)
       setSessions(data.sessions)
       setHasMore(data.has_more)
     } catch {
@@ -55,7 +54,7 @@ export default function ConversationMenu({ token, activeSessionId, isCurrentEmpt
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
     try {
-      const data = await fetchSessions(token, SESSIONS_PAGE_SIZE, sessions.length)
+      const data = await fetchSessions(SESSIONS_PAGE_SIZE, sessions.length)
       setSessions((prev) => [...prev, ...data.sessions])
       setHasMore(data.has_more)
     } catch {
@@ -90,7 +89,7 @@ export default function ConversationMenu({ token, activeSessionId, isCurrentEmpt
     if (!name) return
     if (name.length > 256) return
     try {
-      await renameSession(token, sessionId, name)
+      await renameSession(sessionId, name)
       setSessions((prev) =>
         prev.map((s) => (s.session_id === sessionId ? { ...s, name } : s))
       )
@@ -112,7 +111,7 @@ export default function ConversationMenu({ token, activeSessionId, isCurrentEmpt
 
   async function confirmDelete(sessionId: string) {
     try {
-      await deleteSession(token, sessionId)
+      await deleteSession(sessionId)
       setSessions((prev) => prev.filter((x) => x.session_id !== sessionId))
       if (activeSessionId === sessionId) {
         onSelectSession(null)

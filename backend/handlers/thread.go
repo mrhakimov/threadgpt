@@ -35,20 +35,40 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidUUID(req.ParentMessageID) {
+		http.Error(w, "invalid parent_message_id", http.StatusBadRequest)
+		return
+	}
+
 	apiKey := APIKeyFromContext(r.Context())
 	hash := APIKeyHashFromContext(r.Context())
 
+	if !checkRateLimit("chat:"+hash, maxChatPerMinute, &chatRateMu, chatRateMap) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+
 	// Look up the parent message to get its session
 	parentMsg, err := db.GetMessageByID(req.ParentMessageID)
-	if err != nil || parentMsg == nil {
-		http.Error(w, "parent message not found", http.StatusBadRequest)
+	if err != nil {
+		log.Printf("thread: GetMessageByID error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if parentMsg == nil {
+		http.Error(w, "parent message not found", http.StatusNotFound)
 		return
 	}
 
 	// Load session from the parent message's session_id
 	session, err := db.GetSessionByID(parentMsg.SessionID)
-	if err != nil || session == nil || session.AssistantID == nil {
-		http.Error(w, "session not found", http.StatusBadRequest)
+	if err != nil {
+		log.Printf("thread: GetSessionByID error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if session == nil || session.AssistantID == nil {
+		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
 
@@ -135,15 +155,33 @@ func handleGetThread(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing parent_message_id", http.StatusBadRequest)
 		return
 	}
+	if !isValidUUID(parentMessageID) {
+		http.Error(w, "invalid parent_message_id", http.StatusBadRequest)
+		return
+	}
 
 	parentMsg, err := db.GetMessageByID(parentMessageID)
-	if err != nil || parentMsg == nil {
-		http.Error(w, "parent message not found", http.StatusBadRequest)
+	if err != nil {
+		log.Printf("thread: GetMessageByID error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if parentMsg == nil {
+		http.Error(w, "parent message not found", http.StatusNotFound)
 		return
 	}
 
 	session, err := db.GetSessionByID(parentMsg.SessionID)
-	if err != nil || session == nil || session.APIKeyHash != hash {
+	if err != nil {
+		log.Printf("thread: GetSessionByID error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if session == nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	if session.APIKeyHash != hash {
 		http.Error(w, "unauthorized", http.StatusForbidden)
 		return
 	}
@@ -156,6 +194,7 @@ func handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messagesResponse{Messages: messages, HasMore: len(messages) == limit})
+	json.NewEncoder(w).Encode(messagesResponse{Messages: toMessageDTOs(messages), HasMore: len(messages) == limit})
 }

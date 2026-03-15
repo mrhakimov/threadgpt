@@ -2,22 +2,30 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"threadgpt/handlers"
 
 	"github.com/joho/godotenv"
+	"golang.org/x/crypto/hkdf"
 )
 
 func securityHeaders(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("X-XSS-Protection", "0")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'")
+		if os.Getenv("COOKIE_SECURE") == "true" {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
 		next(w, r)
 	}
 }
@@ -29,6 +37,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			allowedOrigin = "http://localhost:3000"
 		}
 
+		w.Header().Set("Vary", "Origin")
 		origin := r.Header.Get("Origin")
 		if origin == allowedOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
@@ -51,6 +60,10 @@ func main() {
 		log.Println("No .env file found, using environment variables")
 	}
 
+	if os.Getenv("SUPABASE_URL") == "" || (os.Getenv("SUPABASE_SERVICE_KEY") == "" && os.Getenv("SUPABASE_SECRET_KEY") == "") {
+		log.Fatal("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+	}
+
 	// Load or generate TOKEN_ENCRYPTION_KEY (32 bytes / 64 hex chars).
 	var encKey []byte
 	if keyHex := os.Getenv("TOKEN_ENCRYPTION_KEY"); keyHex != "" {
@@ -68,6 +81,21 @@ func main() {
 	}
 	handlers.SetEncryptionKey(encKey)
 
+	// Derive a separate HMAC key for API key hashing via HKDF-SHA256.
+	hashKey := make([]byte, 32)
+	hkdfReader := hkdf.New(sha256.New, encKey, nil, []byte("threadgpt-api-key-hash"))
+	if _, err := io.ReadFull(hkdfReader, hashKey); err != nil {
+		log.Fatal("failed to derive hash key:", err)
+	}
+	handlers.SetHashKey(hashKey)
+
+	// Configure token store size (default 1000, override via MAX_TOKEN_STORE_SIZE).
+	if v := os.Getenv("MAX_TOKEN_STORE_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			handlers.SetMaxTokenStoreSize(n)
+		}
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8000"
@@ -77,6 +105,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/auth", securityHeaders(corsMiddleware(handlers.HandleAuth)))
+	mux.HandleFunc("/api/auth/check", securityHeaders(corsMiddleware(handlers.HandleAuthCheck)))
+	mux.HandleFunc("/api/auth/logout", securityHeaders(corsMiddleware(handlers.HandleLogout)))
 	mux.HandleFunc("/api/session", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSession))))
 	mux.HandleFunc("/api/sessions", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSessions))))
 	mux.HandleFunc("/api/sessions/", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSessionByID))))

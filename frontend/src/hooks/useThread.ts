@@ -6,7 +6,7 @@ import { fetchThreadMessages, sendThreadMessage } from "@/lib/api"
 
 const PAGE_SIZE = 10
 
-export function useThread(token: string, parentMessageId: string, onReplySent?: () => void) {
+export function useThread(parentMessageId: string, onReplySent?: () => void) {
   const [messages, setMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -15,14 +15,14 @@ export function useThread(token: string, parentMessageId: string, onReplySent?: 
 
   useEffect(() => {
     setLoading(true)
-    fetchThreadMessages(token, parentMessageId, PAGE_SIZE, 0)
+    fetchThreadMessages(parentMessageId, PAGE_SIZE, 0)
       .then((data) => {
         setMessages(data.messages ?? [])
         setHasMore(data.has_more ?? false)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [token, parentMessageId])
+  }, [parentMessageId])
 
   const [streamingContent, setStreamingContent] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +33,7 @@ export function useThread(token: string, parentMessageId: string, onReplySent?: 
     const prevScrollHeight = scrollEl?.scrollHeight ?? 0
     try {
       // Backend returns desc reversed to asc. offset from newest end — older messages.
-      const data = await fetchThreadMessages(token, parentMessageId, PAGE_SIZE, messages.length)
+      const data = await fetchThreadMessages(parentMessageId, PAGE_SIZE, messages.length)
       setMessages((prev) => [...data.messages, ...prev])
       setHasMore(data.has_more)
       if (scrollEl) {
@@ -46,7 +46,7 @@ export function useThread(token: string, parentMessageId: string, onReplySent?: 
     } finally {
       setLoadingMore(false)
     }
-  }, [token, parentMessageId, messages.length, loadingMore, hasMore])
+  }, [parentMessageId, messages.length, loadingMore, hasMore])
 
   const sendMessage = useCallback(async (content: string) => {
     if (sending) return
@@ -66,7 +66,7 @@ export function useThread(token: string, parentMessageId: string, onReplySent?: 
     let accumulated = ""
 
     try {
-      await sendThreadMessage(token, parentMessageId, content, (chunk) => {
+      await sendThreadMessage(parentMessageId, content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
       })
@@ -87,7 +87,7 @@ export function useThread(token: string, parentMessageId: string, onReplySent?: 
     } finally {
       setSending(false)
     }
-  }, [token, parentMessageId, sending, onReplySent])
+  }, [parentMessageId, sending, onReplySent])
 
   return { messages, hasMore, loading, loadingMore, sending, streamingContent, error, sendMessage, loadMore }
 }

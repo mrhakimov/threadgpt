@@ -8,95 +8,114 @@ async function handleError(res: Response): Promise<never> {
   throw new Error("Something went wrong.")
 }
 
-function authHeaders(token: string) {
-  return {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${token}`,
-  }
-}
+const jsonHeaders = { "Content-Type": "application/json" }
 
-export async function auth(apiKey: string): Promise<{ token: string }> {
+export async function auth(apiKey: string): Promise<void> {
   const res = await fetch(`${API_URL}/api/auth`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders,
+    credentials: "include",
     body: JSON.stringify({ api_key: apiKey }),
   })
   if (!res.ok) return handleError(res)
-  return res.json()
 }
 
-export async function initSession(token: string) {
+export async function checkAuth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/check`, {
+      credentials: "include",
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_URL}/api/auth/logout`, {
+    method: "DELETE",
+    credentials: "include",
+  })
+}
+
+export async function initSession() {
   const res = await fetch(`${API_URL}/api/session`, {
     method: "POST",
-    headers: authHeaders(token),
+    headers: jsonHeaders,
+    credentials: "include",
     body: JSON.stringify({}),
   })
   if (!res.ok) return handleError(res)
   return res.json()
 }
 
-export async function fetchSession(sessionId: string, token: string) {
+export async function fetchSession(sessionId: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
-    headers: authHeaders(token),
+    credentials: "include",
   })
   if (!res.ok) return handleError(res)
   return res.json()
 }
 
-export async function fetchSessions(token: string, limit = 20, offset = 0): Promise<{ sessions: import("@/types").Session[], has_more: boolean }> {
+export async function fetchSessions(limit = 20, offset = 0): Promise<{ sessions: import("@/types").Session[], has_more: boolean }> {
   const res = await fetch(`${API_URL}/api/sessions?limit=${limit}&offset=${offset}`, {
-    headers: authHeaders(token),
+    credentials: "include",
   })
   if (!res.ok) return handleError(res)
   return res.json()
 }
 
-export async function createSession(token: string, name: string) {
+export async function createSession(name: string) {
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
-    headers: authHeaders(token),
+    headers: jsonHeaders,
+    credentials: "include",
     body: JSON.stringify({ name }),
   })
   if (!res.ok) return handleError(res)
   return res.json()
 }
 
-export async function renameSession(token: string, sessionId: string, name: string) {
+export async function renameSession(sessionId: string, name: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     method: "PATCH",
-    headers: authHeaders(token),
+    headers: jsonHeaders,
+    credentials: "include",
     body: JSON.stringify({ name }),
   })
   if (!res.ok) return handleError(res)
 }
 
-export async function updateSystemPrompt(sessionId: string, systemPrompt: string, token: string) {
+export async function updateSystemPrompt(sessionId: string, systemPrompt: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     method: "PATCH",
-    headers: authHeaders(token),
+    headers: jsonHeaders,
+    credentials: "include",
     body: JSON.stringify({ system_prompt: systemPrompt }),
   })
   if (!res.ok) return handleError(res)
 }
 
-export async function deleteSession(token: string, sessionId: string) {
+export async function deleteSession(sessionId: string) {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
     method: "DELETE",
-    headers: authHeaders(token),
+    credentials: "include",
   })
   if (!res.ok) return handleError(res)
 }
 
-export async function fetchHistory(token: string, sessionId?: string, limit = 50, offset = 0): Promise<{ messages: import("@/types").Message[], has_more: boolean }> {
-  const headers: Record<string, string> = authHeaders(token)
+export async function fetchHistory(sessionId?: string, limit = 50, offset = 0): Promise<{ messages: import("@/types").Message[], has_more: boolean }> {
+  const headers: Record<string, string> = {}
   if (sessionId) headers["X-Session-ID"] = sessionId
-  const res = await fetch(`${API_URL}/api/history?limit=${limit}&offset=${offset}`, { headers })
+  const res = await fetch(`${API_URL}/api/history?limit=${limit}&offset=${offset}`, {
+    headers,
+    credentials: "include",
+  })
   if (!res.ok) return handleError(res)
   return res.json()
 }
 
 export async function sendChatMessage(
-  token: string,
   userMessage: string,
   onChunk: (chunk: string) => void,
   sessionId?: string,
@@ -104,30 +123,31 @@ export async function sendChatMessage(
 ): Promise<string | undefined> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
-    headers: authHeaders(token),
+    headers: jsonHeaders,
+    credentials: "include",
     body: JSON.stringify({ user_message: userMessage, session_id: sessionId ?? "", force_new: forceNew ?? false }),
   })
   if (!res.ok) return handleError(res)
   return consumeStream(res, onChunk)
 }
 
-export async function fetchThreadMessages(token: string, parentMessageId: string, limit = 50, offset = 0): Promise<{ messages: import("@/types").Message[], has_more: boolean }> {
+export async function fetchThreadMessages(parentMessageId: string, limit = 50, offset = 0): Promise<{ messages: import("@/types").Message[], has_more: boolean }> {
   const res = await fetch(`${API_URL}/api/thread?parent_message_id=${encodeURIComponent(parentMessageId)}&limit=${limit}&offset=${offset}`, {
-    headers: authHeaders(token),
+    credentials: "include",
   })
   if (!res.ok) return handleError(res)
   return res.json()
 }
 
 export async function sendThreadMessage(
-  token: string,
   parentMessageId: string,
   userMessage: string,
   onChunk: (chunk: string) => void
 ): Promise<void> {
   const res = await fetch(`${API_URL}/api/thread`, {
     method: "POST",
-    headers: authHeaders(token),
+    headers: jsonHeaders,
+    credentials: "include",
     body: JSON.stringify({
       parent_message_id: parentMessageId,
       user_message: userMessage,

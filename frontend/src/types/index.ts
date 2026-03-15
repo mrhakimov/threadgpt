@@ -3,8 +3,7 @@ export interface Message {
   session_id: string
   role: "user" | "assistant"
   content: string
-  openai_thread_id?: string
-  parent_message_id?: string
+parent_message_id?: string
   reply_count?: number
   created_at: string
 }

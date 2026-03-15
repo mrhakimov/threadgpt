@@ -4,7 +4,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "Stopping backend and frontend..."
 pkill -f "$PROJECT_ROOT/backend" 2>/dev/null
-pkill -f "next dev" 2>/dev/null
+pkill -f "$PROJECT_ROOT/frontend/node_modules/.bin/next" 2>/dev/null
 pkill -f "npm run dev" 2>/dev/null
 sleep 1
 

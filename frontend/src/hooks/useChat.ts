@@ -7,7 +7,7 @@ import { initSession, fetchHistory, fetchSession, sendChatMessage } from "@/lib/
 const PAGE_SIZE = 10
 
 // sessionId: string = load that session, null = blank new conversation, undefined = auto-detect latest
-export function useChat(token: string, sessionId?: string | null, onSessionResolved?: (sessionId: string) => void, onUnauthorized?: () => void) {
+export function useChat(sessionId?: string | null, onSessionResolved?: (sessionId: string) => void, onUnauthorized?: () => void) {
   const onSessionResolvedRef = useRef(onSessionResolved)
   onSessionResolvedRef.current = onSessionResolved
   const onUnauthorizedRef = useRef(onUnauthorized)
@@ -23,7 +23,6 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!token) return
     let cancelled = false
 
     async function init() {
@@ -42,8 +41,8 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
         if (sessionId) {
           // Load a specific existing session
           const [historyData, sessionData] = await Promise.all([
-            fetchHistory(token, sessionId, PAGE_SIZE, 0),
-            fetchSession(sessionId, token),
+            fetchHistory(sessionId, PAGE_SIZE, 0),
+            fetchSession(sessionId),
           ])
           if (!cancelled) {
             setMessages(historyData.messages)
@@ -52,12 +51,12 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
           }
         } else {
           // undefined: auto-detect latest session
-          const sessionData = await initSession(token)
+          const sessionData = await initSession()
           if (cancelled) return
           setSession(sessionData)
 
           if (!sessionData.is_new) {
-            const historyData = await fetchHistory(token, undefined, PAGE_SIZE, 0)
+            const historyData = await fetchHistory(undefined, PAGE_SIZE, 0)
             if (!cancelled) {
               setMessages(historyData.messages)
               setHasMoreMessages(historyData.has_more)
@@ -81,7 +80,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
 
     init()
     return () => { cancelled = true }
-  }, [token, sessionId])
+  }, [sessionId])
 
   const scrollRefForPreserve = useRef<HTMLDivElement | null>(null)
 
@@ -95,7 +94,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     try {
       // Backend returns desc (newest first, then reversed to asc). offset from newest end.
       // We already have `messages.length` newest messages; fetch the next older batch.
-      const historyData = await fetchHistory(token, activeSessionId, PAGE_SIZE, messages.length)
+      const historyData = await fetchHistory(activeSessionId, PAGE_SIZE, messages.length)
       setMessages((prev) => [...historyData.messages, ...prev])
       setHasMoreMessages(historyData.has_more)
       // Preserve scroll position after prepend
@@ -109,14 +108,14 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     } finally {
       setLoadingMore(false)
     }
-  }, [token, sessionId, session, messages.length, loadingMore, hasMoreMessages])
+  }, [sessionId, session, messages.length, loadingMore, hasMoreMessages])
 
   const loadAllMessages = useCallback(async (scrollEl?: HTMLDivElement | null) => {
     const activeSessionId = sessionId || session?.session_id
     if (!activeSessionId) return
     setLoadingMore(true)
     try {
-      const historyData = await fetchHistory(token, activeSessionId, 10000, 0)
+      const historyData = await fetchHistory(activeSessionId, 10000, 0)
       setMessages(historyData.messages)
       setHasMoreMessages(false)
       const el = scrollEl ?? scrollRefForPreserve.current
@@ -130,7 +129,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     } finally {
       setLoadingMore(false)
     }
-  }, [token, sessionId, session])
+  }, [sessionId, session])
 
   const sendMessage = useCallback(async (content: string) => {
     if (sending) return
@@ -152,14 +151,14 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     try {
       const forceNew = sessionId === null
       const activeSessionId = forceNew ? undefined : (sessionId || session?.session_id || undefined)
-      const streamedSessionId = await sendChatMessage(token, content, (chunk) => {
+      const streamedSessionId = await sendChatMessage(content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
       }, activeSessionId, forceNew)
 
       // Use the session ID returned from the stream; fall back to activeSessionId
       const resolvedSessionId = streamedSessionId ?? activeSessionId
-      const historyData = await fetchHistory(token, resolvedSessionId, PAGE_SIZE, 0)
+      const historyData = await fetchHistory(resolvedSessionId, PAGE_SIZE, 0)
       setMessages(historyData.messages)
       setHasMoreMessages(historyData.has_more)
       setStreamingContent("")
@@ -168,7 +167,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
         setSession({ session_id: resolvedSessionId, is_new: false })
         onSessionResolvedRef.current?.(resolvedSessionId)
       } else if (!session?.assistant_id && resolvedSessionId) {
-        const sessionData = await fetchSession(resolvedSessionId, token)
+        const sessionData = await fetchSession(resolvedSessionId)
         setSession({ session_id: resolvedSessionId, is_new: false, name: sessionData.name, system_prompt: sessionData.system_prompt })
       }
     } catch (e) {
@@ -182,7 +181,7 @@ export function useChat(token: string, sessionId?: string | null, onSessionResol
     } finally {
       setSending(false)
     }
-  }, [token, sending, session, sessionId])
+  }, [sending, session, sessionId])
 
   function updateLocalSystemPrompt(content: string) {
     setSession((prev) => prev ? { ...prev, system_prompt: content } : prev)

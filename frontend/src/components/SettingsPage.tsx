@@ -3,15 +3,20 @@
 import { useState } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { logout } from "@/lib/api"
 
 interface Props {
-  token: string
   onClose: () => void
   onLogout: () => void
 }
 
-export default function SettingsPage({ token, onClose, onLogout }: Props) {
+export default function SettingsPage({ onClose, onLogout }: Props) {
   const [confirming, setConfirming] = useState(false)
+
+  async function handleLogout() {
+    await logout()
+    onLogout()
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col">
@@ -26,13 +31,13 @@ export default function SettingsPage({ token, onClose, onLogout }: Props) {
         <div className="max-w-lg mx-auto space-y-6">
           <section>
             <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-              Session Token
+              Session
             </h2>
-            <div className="rounded-md border px-4 py-3 font-mono text-sm break-all bg-muted/40">
-              {token.slice(0, 8) + "••••••••"}
+            <div className="rounded-md border px-4 py-3 text-sm bg-muted/40">
+              Session active
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Your API key was exchanged for a session token. The raw key is never stored locally.
+              Your API key is encrypted in server memory for your session and never written to disk or stored in the database.
             </p>
           </section>
 
@@ -44,7 +49,7 @@ export default function SettingsPage({ token, onClose, onLogout }: Props) {
               <div className="rounded-md border border-destructive/40 px-4 py-3 space-y-3">
                 <p className="text-sm">Are you sure you want to log out? You'll need to re-enter your API key.</p>
                 <div className="flex gap-2">
-                  <Button variant="destructive" size="sm" onClick={onLogout}>
+                  <Button variant="destructive" size="sm" onClick={handleLogout}>
                     Log out
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>

@@ -35,6 +35,16 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	apiKey := APIKeyFromContext(r.Context())
 	hash := APIKeyHashFromContext(r.Context())
 
+	if !checkRateLimit("chat:"+hash, maxChatPerMinute, &chatRateMu, chatRateMap) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+
+	if req.SessionID != "" && !isValidUUID(req.SessionID) {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
+		return
+	}
+
 	// Look up session: by explicit ID, or fall back to most recent (unless force_new)
 	var session *db.Session
 	var err error

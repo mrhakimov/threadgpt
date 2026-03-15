@@ -3,31 +3,31 @@
 import { useState, useEffect } from "react"
 import ApiKeyGate from "@/components/ApiKeyGate"
 import ChatView from "@/components/ChatView"
-import { auth } from "@/lib/api"
+import { auth, checkAuth } from "@/lib/api"
 
-const STORAGE_KEY = "threadgpt_token"
 const SESSION_KEY = "threadgpt_session_id"
 
 export default function Home() {
-  const [token, setToken] = useState<string | null>(null)
+  const [loggedIn, setLoggedIn] = useState(false)
   const [sessionId, setSessionId] = useState<string | null | undefined>(undefined)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) setToken(stored)
-    const storedSession = sessionStorage.getItem(SESSION_KEY)
-    // undefined = auto-detect latest; null = blank new; string = specific session
-    setSessionId(storedSession ?? null)
-    setMounted(true)
+    checkAuth().then((ok) => {
+      setLoggedIn(ok)
+      const storedSession = sessionStorage.getItem(SESSION_KEY)
+      // undefined = auto-detect latest; null = blank new; string = specific session
+      // If nothing stored, use undefined so useChat auto-detects the latest session
+      setSessionId(storedSession ?? null)
+      setMounted(true)
+    })
   }, [])
 
   async function handleApiKey(key: string) {
-    const { token: newToken } = await auth(key)
-    localStorage.setItem(STORAGE_KEY, newToken)
+    await auth(key)
     sessionStorage.removeItem(SESSION_KEY)
     setSessionId(null)
-    setToken(newToken)
+    setLoggedIn(true)
   }
 
   function handleSelectSession(id: string | null) {
@@ -41,19 +41,17 @@ export default function Home() {
   }
 
   function handleUnauthorized() {
-    localStorage.removeItem(STORAGE_KEY)
-    setToken(null)
+    setLoggedIn(false)
   }
 
   if (!mounted) return null
 
-  if (!token) {
+  if (!loggedIn) {
     return <ApiKeyGate onSubmit={handleApiKey} />
   }
 
   return (
     <ChatView
-      token={token}
       sessionId={sessionId}
       onSelectSession={handleSelectSession}
       onUnauthorized={handleUnauthorized}

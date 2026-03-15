@@ -10,8 +10,39 @@ import (
 
 const defaultMessagesLimit = 10
 
+// MessageDTO is the public representation of a message — excludes internal fields like openai_thread_id.
+type MessageDTO struct {
+	ID              string  `json:"id"`
+	SessionID       string  `json:"session_id"`
+	Role            string  `json:"role"`
+	Content         string  `json:"content"`
+	ParentMessageID *string `json:"parent_message_id"`
+	ReplyCount      int     `json:"reply_count"`
+	CreatedAt       string  `json:"created_at"`
+}
+
+func toMessageDTO(m db.Message) MessageDTO {
+	return MessageDTO{
+		ID:              m.ID,
+		SessionID:       m.SessionID,
+		Role:            m.Role,
+		Content:         m.Content,
+		ParentMessageID: m.ParentMessageID,
+		ReplyCount:      m.ReplyCount,
+		CreatedAt:       m.CreatedAt,
+	}
+}
+
+func toMessageDTOs(msgs []db.Message) []MessageDTO {
+	out := make([]MessageDTO, len(msgs))
+	for i, m := range msgs {
+		out[i] = toMessageDTO(m)
+	}
+	return out
+}
+
 type messagesResponse struct {
-	Messages []db.Message `json:"messages"`
+	Messages []MessageDTO `json:"messages"`
 	HasMore  bool         `json:"has_more"`
 }
 
@@ -24,7 +55,7 @@ func parsePaginationParams(r *http.Request, defaultLimit int) (limit, offset int
 		}
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 100000 {
 			offset = n
 		}
 	}
@@ -43,6 +74,10 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 	// Optional session_id filter — passed via X-Session-ID header to avoid URL exposure
 	sessionID := r.Header.Get("X-Session-ID")
 	if sessionID != "" {
+		if !isValidUUID(sessionID) {
+			http.Error(w, "invalid session id", http.StatusBadRequest)
+			return
+		}
 		session, err := db.GetSessionByID(sessionID)
 		if err != nil {
 			log.Printf("history: GetSessionByID error: %v", err)
@@ -59,8 +94,9 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(messagesResponse{Messages: messages, HasMore: len(messages) == limit})
+		json.NewEncoder(w).Encode(messagesResponse{Messages: toMessageDTOs(messages), HasMore: len(messages) == limit})
 		return
 	}
 
@@ -72,8 +108,9 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if session == nil {
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(messagesResponse{Messages: []db.Message{}, HasMore: false})
+		json.NewEncoder(w).Encode(messagesResponse{Messages: []MessageDTO{}, HasMore: false})
 		return
 	}
 
@@ -84,6 +121,7 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messagesResponse{Messages: messages, HasMore: len(messages) == limit})
+	json.NewEncoder(w).Encode(messagesResponse{Messages: toMessageDTOs(messages), HasMore: len(messages) == limit})
 }

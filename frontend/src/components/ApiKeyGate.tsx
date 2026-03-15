@@ -35,8 +35,7 @@ export default function ApiKeyGate({ onSubmit }: Props) {
         <CardHeader>
           <CardTitle>ThreadGPT</CardTitle>
           <CardDescription>
-            Enter your OpenAI API key to start chatting. Your key is never stored on our servers
-            — only a hash is used to identify your session.
+            Enter your OpenAI API key to start chatting. Your key is encrypted in server memory for your session and never written to disk or stored in the database.
           </CardDescription>
         </CardHeader>
         <CardContent>

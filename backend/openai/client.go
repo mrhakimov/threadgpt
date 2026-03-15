@@ -3,6 +3,7 @@ package openai
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,14 +16,6 @@ import (
 
 // ErrInternal is returned when an OpenAI API call fails, hiding internal details from callers.
 var ErrInternal = errors.New("internal error")
-
-func truncateForLog(b []byte) string {
-	s := string(b)
-	if len(s) > 200 {
-		s = s[:200] + "...[truncated]"
-	}
-	return s
-}
 
 const baseURL = "https://api.openai.com/v1"
 
@@ -58,7 +51,7 @@ func doRequest(apiKey, method, path string, body any, result any) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		log.Printf("openai error %d: %s", resp.StatusCode, truncateForLog(respBody))
+		log.Printf("openai error %d on %s %s", resp.StatusCode, method, path)
 		return ErrInternal
 	}
 
@@ -110,7 +103,10 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", baseURL+"/threads/"+threadID+"/runs", bytes.NewReader(b))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/threads/"+threadID+"/runs", bytes.NewReader(b))
 	if err != nil {
 		return "", err
 	}
@@ -120,7 +116,7 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 	req.Header.Set("OpenAI-Beta", "assistants=v2")
 	req.Header.Set("Accept", "text/event-stream")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -128,8 +124,7 @@ func RunAndStream(apiKey, threadID, assistantID string, w http.ResponseWriter) (
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("openai stream error %d: %s", resp.StatusCode, truncateForLog(body))
+		log.Printf("openai stream error %d on POST /threads/.../runs", resp.StatusCode)
 		return "", ErrInternal
 	}
 

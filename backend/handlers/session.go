@@ -1,9 +1,10 @@
 package handlers
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -22,8 +23,9 @@ type SessionResponse struct {
 }
 
 func hashAPIKey(apiKey string) string {
-	h := sha256.Sum256([]byte(apiKey))
-	return fmt.Sprintf("%x", h)
+	mac := hmac.New(sha256.New, hashKey)
+	mac.Write([]byte(apiKey))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // HandleSessions handles GET (list) and POST (create named session)
@@ -86,6 +88,7 @@ func handleListSessions(w http.ResponseWriter, r *http.Request) {
 		Sessions []item `json:"sessions"`
 		HasMore  bool   `json:"has_more"`
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response{Sessions: result, HasMore: len(sessions) == limit})
 }
@@ -125,6 +128,7 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 		IsNew:     true,
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -134,6 +138,10 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Path[len("/api/sessions/"):]
 	if sessionID == "" {
 		http.Error(w, "session id required", http.StatusBadRequest)
+		return
+	}
+	if !isValidUUID(sessionID) {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
 		return
 	}
 
@@ -161,6 +169,7 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 			SystemPrompt: session.SystemPrompt,
 			Name:         session.Name,
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 
@@ -272,6 +281,7 @@ func HandleSession(w http.ResponseWriter, r *http.Request) {
 	resp := SessionResponse{}
 	if session == nil {
 		resp.IsNew = true
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(resp)
@@ -283,6 +293,7 @@ func HandleSession(w http.ResponseWriter, r *http.Request) {
 	resp.SystemPrompt = session.SystemPrompt
 	resp.Name = session.Name
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }

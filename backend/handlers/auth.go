@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -25,9 +27,17 @@ const (
 // encryptionKey is set once at startup via SetEncryptionKey.
 var encryptionKey []byte
 
+// hashKey is set once at startup via SetHashKey (derived separately from encryptionKey).
+var hashKey []byte
+
 // SetEncryptionKey stores the 32-byte AES key used for encrypting API keys at rest.
 func SetEncryptionKey(key []byte) {
 	encryptionKey = key
+}
+
+// SetHashKey stores the 32-byte HMAC key used for hashing API keys for DB lookup.
+func SetHashKey(key []byte) {
+	hashKey = key
 }
 
 func encryptAPIKey(raw string) (string, error) {
@@ -80,7 +90,12 @@ var (
 	tokenStore = map[string]tokenEntry{}
 )
 
-const maxTokenStoreSize = 1000
+var maxTokenStoreSize = 1000
+
+// SetMaxTokenStoreSize overrides the default token store size limit.
+func SetMaxTokenStoreSize(n int) {
+	maxTokenStoreSize = n
+}
 
 var (
 	authRateMu  sync.Mutex
@@ -88,6 +103,18 @@ var (
 )
 
 const maxAuthPerMinute = 10
+
+var (
+	chatRateMu  sync.Mutex
+	chatRateMap = map[string][]time.Time{}
+)
+
+const maxChatPerMinute = 60
+
+// uuidRe matches standard UUID v4 format (case-insensitive).
+var uuidRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func isValidUUID(s string) bool { return uuidRe.MatchString(s) }
 
 func generateToken() (string, error) {
 	b := make([]byte, 32)
@@ -105,7 +132,18 @@ func storeToken(token, rawAPIKey, apiKeyHash string) error {
 	tokenMu.Lock()
 	defer tokenMu.Unlock()
 	if len(tokenStore) >= maxTokenStoreSize {
-		return errTokenStoreFull
+		// Evict the soonest-expiring entry instead of rejecting
+		var evictKey string
+		var earliest time.Time
+		for k, v := range tokenStore {
+			if evictKey == "" || v.expiresAt.Before(earliest) {
+				evictKey = k
+				earliest = v.expiresAt
+			}
+		}
+		if evictKey != "" {
+			delete(tokenStore, evictKey)
+		}
 	}
 	tokenStore[token] = tokenEntry{
 		encryptedAPIKey: enc,
@@ -114,13 +152,6 @@ func storeToken(token, rawAPIKey, apiKeyHash string) error {
 	}
 	return nil
 }
-
-// errTokenStoreFull is a sentinel used internally.
-var errTokenStoreFull = &tokenStoreFullError{}
-
-type tokenStoreFullError struct{}
-
-func (e *tokenStoreFullError) Error() string { return "token store full" }
 
 func lookupToken(token string) (tokenEntry, bool) {
 	tokenMu.RLock()
@@ -143,15 +174,76 @@ func PurgeExpiredTokens() {
 			}
 		}
 		tokenMu.Unlock()
+
+		// Purge stale auth rate-limit entries
+		cutoff := time.Now().Add(-time.Minute)
+		authRateMu.Lock()
+		for ip, times := range authRateMap {
+			var keep []time.Time
+			for _, t := range times {
+				if t.After(cutoff) {
+					keep = append(keep, t)
+				}
+			}
+			if len(keep) == 0 {
+				delete(authRateMap, ip)
+			} else {
+				authRateMap[ip] = keep
+			}
+		}
+		authRateMu.Unlock()
+
+		// Purge stale chat rate-limit entries
+		chatRateMu.Lock()
+		for key, times := range chatRateMap {
+			var keep []time.Time
+			for _, t := range times {
+				if t.After(cutoff) {
+					keep = append(keep, t)
+				}
+			}
+			if len(keep) == 0 {
+				delete(chatRateMap, key)
+			} else {
+				chatRateMap[key] = keep
+			}
+		}
+		chatRateMu.Unlock()
 	}
 }
 
+// remoteIP extracts the client IP. X-Real-IP is only trusted when TRUSTED_PROXY=true.
 func remoteIP(r *http.Request) string {
+	if os.Getenv("TRUSTED_PROXY") == "true" {
+		if ip := r.Header.Get("X-Real-IP"); ip != "" && net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// checkRateLimit returns true if the caller is within limit, false if exceeded.
+func checkRateLimit(key string, limit int, mu *sync.Mutex, m map[string][]time.Time) bool {
+	now := time.Now()
+	mu.Lock()
+	defer mu.Unlock()
+	timestamps := m[key]
+	cutoff := now.Add(-time.Minute)
+	filtered := timestamps[:0]
+	for _, t := range timestamps {
+		if t.After(cutoff) {
+			filtered = append(filtered, t)
+		}
+	}
+	if len(filtered) >= limit {
+		return false
+	}
+	m[key] = append(filtered, now)
+	return true
 }
 
 func HandleAuth(w http.ResponseWriter, r *http.Request) {
@@ -162,24 +254,10 @@ func HandleAuth(w http.ResponseWriter, r *http.Request) {
 
 	// Per-IP rate limiting
 	ip := remoteIP(r)
-	now := time.Now()
-	authRateMu.Lock()
-	timestamps := authRateMap[ip]
-	cutoff := now.Add(-time.Minute)
-	filtered := timestamps[:0]
-	for _, t := range timestamps {
-		if t.After(cutoff) {
-			filtered = append(filtered, t)
-		}
-	}
-	if len(filtered) >= maxAuthPerMinute {
-		authRateMu.Unlock()
+	if !checkRateLimit(ip, maxAuthPerMinute, &authRateMu, authRateMap) {
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
-	filtered = append(filtered, now)
-	authRateMap[ip] = filtered
-	authRateMu.Unlock()
 
 	r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
 	var req struct {
@@ -203,26 +281,67 @@ func HandleAuth(w http.ResponseWriter, r *http.Request) {
 
 	hash := hashAPIKey(req.APIKey)
 	if err := storeToken(token, req.APIKey, hash); err != nil {
-		if err == errTokenStoreFull {
-			http.Error(w, "too many requests", http.StatusTooManyRequests)
-			return
-		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	secure := r.TLS != nil || os.Getenv("COOKIE_SECURE") == "true" ||
+		strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") && os.Getenv("TRUSTED_PROXY") == "true"
+	http.SetCookie(w, &http.Cookie{
+		Name:     "threadgpt_token",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+	})
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cookie, err := r.Cookie("threadgpt_token")
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if _, ok := lookupToken(cookie.Value); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+}
+
+func HandleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if cookie, err := r.Cookie("threadgpt_token"); err == nil {
+		tokenMu.Lock()
+		delete(tokenStore, cookie.Value)
+		tokenMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{Name: "threadgpt_token", Value: "", Path: "/", MaxAge: -1})
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
+		cookie, err := r.Cookie("threadgpt_token")
+		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		token := strings.TrimPrefix(authHeader, "Bearer ")
+		token := cookie.Value
 		entry, ok := lookupToken(token)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)

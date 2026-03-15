@@ -8,20 +8,19 @@ import ChatInput from "./ChatInput"
 import ThreadDrawer from "./ThreadDrawer"
 import ConversationMenu from "./ConversationMenu"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, Settings } from "lucide-react"
+import { ChevronDown, Loader2, Settings } from "lucide-react"
 import SettingsPage from "./SettingsPage"
 import { updateSystemPrompt } from "@/lib/api"
 
 interface Props {
-  token: string
   sessionId: string | null | undefined
   onSelectSession: (sessionId: string | null) => void
   onUnauthorized: () => void
 }
 
-export default function ChatView({ token, sessionId, onSelectSession, onUnauthorized }: Props) {
+export default function ChatView({ sessionId, onSelectSession, onUnauthorized }: Props) {
   const { messages, hasMoreMessages, loadingMore, session, loading, sending, streamingContent, error, sendMessage, loadMoreMessages, loadAllMessages, updateLocalSystemPrompt, incrementReplyCount } =
-    useChat(token, sessionId, (resolvedId) => {
+    useChat(sessionId, (resolvedId) => {
       if (!sessionId) onSelectSession(resolvedId)
     }, onUnauthorized)
   const [threadParent, setThreadParent] = useState<Message | null>(null)
@@ -65,7 +64,7 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center">
-        <p className="text-muted-foreground text-sm">Loading...</p>
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     )
   }
@@ -77,7 +76,6 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
     <div className="relative h-screen flex bg-background overflow-hidden">
       {/* Sidebar */}
       <ConversationMenu
-        token={token}
         activeSessionId={sessionId ?? null}
         isCurrentEmpty={isEmpty}
         collapsed={sidebarCollapsed}
@@ -152,7 +150,7 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
                 sending={sending}
                 onReply={setThreadParent}
                 onEditSystemPrompt={session?.session_id ? async (content) => {
-                  await updateSystemPrompt(session.session_id!, content, token)
+                  await updateSystemPrompt(session.session_id!, content)
                   updateLocalSystemPrompt(content)
                 } : undefined}
                 scrollRef={scrollRef}
@@ -201,7 +199,6 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
         {/* Thread Drawer */}
         {threadParent && (
           <ThreadDrawer
-            token={token}
             parentMessage={threadParent}
             onClose={() => setThreadParent(null)}
             onReply={(parentId) => incrementReplyCount(parentId, 1)}
@@ -210,7 +207,7 @@ export default function ChatView({ token, sessionId, onSelectSession, onUnauthor
 
         {/* Settings */}
         {showSettings && (
-          <SettingsPage token={token} onClose={() => setShowSettings(false)} onLogout={onUnauthorized} />
+          <SettingsPage onClose={() => setShowSettings(false)} onLogout={onUnauthorized} />
         )}
       </div>{/* end main area */}
     </div>

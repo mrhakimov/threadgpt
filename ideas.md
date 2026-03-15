@@ -6,3 +6,4 @@
 - refactor backend code
 - user identity is now identified by api key - change it to make sure we support multiple api keys
 - add donation link
+- get rid of full refresh when clicking "New conversation" and sending the first message
