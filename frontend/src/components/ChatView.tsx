@@ -33,8 +33,18 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
     return localStorage.getItem("sidebarCollapsed") === "true"
   })
   const scrollRef = useRef<HTMLDivElement>(null)
+  const mainAreaRef = useRef<HTMLDivElement>(null)
+  const threadAbortRef = useRef<(() => void) | null>(null)
+
+  const handleSelectSession = useCallback((id: string | null) => {
+    threadAbortRef.current?.()
+    if (id === null) setThreadParent(null)
+    onSelectSession(id)
+  }, [onSelectSession])
 
   useEffect(() => {
+    threadAbortRef.current?.()
+    setThreadParent(null)
     setFocusTrigger((n) => n + 1)
     setOverrideName(null)
   }, [sessionId])
@@ -80,12 +90,12 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         isCurrentEmpty={isEmpty}
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((v) => { const next = !v; localStorage.setItem("sidebarCollapsed", String(next)); return next })}
-        onSelectSession={onSelectSession}
+        onSelectSession={handleSelectSession}
         onRenameActive={(name) => setOverrideName(name)}
       />
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div ref={mainAreaRef} className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
         {/* Header */}
         <header className="shrink-0 border-b px-4 py-3 flex items-center gap-3">
           <h1 className="font-semibold">ThreadGPT</h1>
@@ -200,8 +210,10 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         {threadParent && (
           <ThreadDrawer
             parentMessage={threadParent}
-            onClose={() => setThreadParent(null)}
+            onClose={() => { threadAbortRef.current?.(); setThreadParent(null) }}
             onReply={(parentId) => incrementReplyCount(parentId, 1)}
+            container={mainAreaRef.current}
+            onAbortRef={(fn) => { threadAbortRef.current = fn }}
           />
         )}
 

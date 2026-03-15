@@ -82,6 +82,16 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
     return () => { cancelled = true }
   }, [sessionId])
 
+  const sendAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => {
+      sendAbortRef.current?.abort()
+      setSending(false)
+      setStreamingContent("")
+    }
+  }, [sessionId])
+
   const scrollRefForPreserve = useRef<HTMLDivElement | null>(null)
 
   const loadMoreMessages = useCallback(async (scrollEl?: HTMLDivElement | null) => {
@@ -136,6 +146,9 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
     setSending(true)
     setError(null)
 
+    const controller = new AbortController()
+    sendAbortRef.current = controller
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       session_id: session?.session_id ?? "",
@@ -154,11 +167,16 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
       const streamedSessionId = await sendChatMessage(content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
-      }, activeSessionId, forceNew)
+      }, activeSessionId, forceNew, controller.signal)
+
+      if (controller.signal.aborted) return
 
       // Use the session ID returned from the stream; fall back to activeSessionId
       const resolvedSessionId = streamedSessionId ?? activeSessionId
       const historyData = await fetchHistory(resolvedSessionId, PAGE_SIZE, 0)
+
+      if (controller.signal.aborted) return
+
       setMessages(historyData.messages)
       setHasMoreMessages(historyData.has_more)
       setStreamingContent("")
@@ -168,9 +186,12 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
         onSessionResolvedRef.current?.(resolvedSessionId)
       } else if (!session?.assistant_id && resolvedSessionId) {
         const sessionData = await fetchSession(resolvedSessionId)
-        setSession({ session_id: resolvedSessionId, is_new: false, name: sessionData.name, system_prompt: sessionData.system_prompt })
+        if (!controller.signal.aborted) {
+          setSession({ session_id: resolvedSessionId, is_new: false, name: sessionData.name, system_prompt: sessionData.system_prompt })
+        }
       }
     } catch (e) {
+      if (controller.signal.aborted) return
       const msg = String(e)
       if (msg.toLowerCase().includes("unauthorized") || msg.includes("401")) {
         onUnauthorizedRef.current?.()

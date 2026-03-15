@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { Message } from "@/types"
 import { useThread } from "@/hooks/useThread"
 import MessageList from "./MessageList"
@@ -12,10 +13,12 @@ interface Props {
   parentMessage: Message
   onClose: () => void
   onReply?: (parentMessageId: string) => void
+  container?: HTMLElement | null
+  onAbortRef?: (abortFn: (() => void) | null) => void
 }
 
-export default function ThreadDrawer({ parentMessage, onClose, onReply }: Props) {
-  const { messages, hasMore, loadingMore, loading, sending, streamingContent, error, sendMessage, loadMore } = useThread(
+export default function ThreadDrawer({ parentMessage, onClose, onReply, container, onAbortRef }: Props) {
+  const { messages, hasMore, loadingMore, loading, sending, streamingContent, error, sendMessage, loadMore, abort } = useThread(
     parentMessage.id,
     onReply ? () => onReply(parentMessage.id) : undefined
   )
@@ -30,6 +33,11 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply }: Props)
     }
   }, [hasMore, loadingMore, loadMore])
 
+  useEffect(() => {
+    onAbortRef?.(abort)
+    return () => onAbortRef?.(null)
+  }, [abort, onAbortRef])
+
   // Close on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -39,18 +47,18 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply }: Props)
     return () => document.removeEventListener("keydown", onKey)
   }, [onClose])
 
-  return (
+  return createPortal(
     <>
-      {/* Backdrop */}
+      {/* Backdrop — only covers the portal container, not the sidebar */}
       <div
-        className="fixed inset-0 bg-black/20 z-40"
+        className="absolute inset-0 bg-black/20 z-40"
         onClick={onClose}
       />
 
       {/* Drawer */}
       <div
         ref={drawerRef}
-        className="fixed right-0 top-0 h-full w-full max-w-md bg-background border-l shadow-xl z-50 flex flex-col"
+        className="absolute right-0 top-0 h-full w-full max-w-md bg-background border-l shadow-xl z-50 flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -102,6 +110,7 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply }: Props)
           />
         </div>
       </div>
-    </>
+    </>,
+    container ?? document.body
   )
 }

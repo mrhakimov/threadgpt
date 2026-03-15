@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 async function handleError(res: Response): Promise<never> {
   if (res.status >= 500) throw new Error("Server error, please try again.")
@@ -119,16 +119,18 @@ export async function sendChatMessage(
   userMessage: string,
   onChunk: (chunk: string) => void,
   sessionId?: string,
-  forceNew?: boolean
+  forceNew?: boolean,
+  signal?: AbortSignal
 ): Promise<string | undefined> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: jsonHeaders,
     credentials: "include",
+    signal,
     body: JSON.stringify({ user_message: userMessage, session_id: sessionId ?? "", force_new: forceNew ?? false }),
   })
   if (!res.ok) return handleError(res)
-  return consumeStream(res, onChunk)
+  return consumeStream(res, onChunk, signal)
 }
 
 export async function fetchThreadMessages(parentMessageId: string, limit = 50, offset = 0): Promise<{ messages: import("@/types").Message[], has_more: boolean }> {
@@ -142,27 +144,31 @@ export async function fetchThreadMessages(parentMessageId: string, limit = 50, o
 export async function sendThreadMessage(
   parentMessageId: string,
   userMessage: string,
-  onChunk: (chunk: string) => void
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const res = await fetch(`${API_URL}/api/thread`, {
     method: "POST",
     headers: jsonHeaders,
     credentials: "include",
+    signal,
     body: JSON.stringify({
       parent_message_id: parentMessageId,
       user_message: userMessage,
     }),
   })
   if (!res.ok) return handleError(res)
-  await consumeStream(res, onChunk)
+  await consumeStream(res, onChunk, signal)
 }
 
-async function consumeStream(res: Response, onChunk: (chunk: string) => void): Promise<string | undefined> {
+async function consumeStream(res: Response, onChunk: (chunk: string) => void, signal?: AbortSignal): Promise<string | undefined> {
   if (!res.body) return
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
   let resolvedSessionId: string | undefined
+
+  signal?.addEventListener("abort", () => reader.cancel())
 
   while (true) {
     const { done, value } = await reader.read()

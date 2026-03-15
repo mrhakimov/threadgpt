@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { Message } from "@/types"
 import { fetchThreadMessages, sendThreadMessage } from "@/lib/api"
 
@@ -26,6 +26,16 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
 
   const [streamingContent, setStreamingContent] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const activeRef = useRef(true)
+
+  useEffect(() => {
+    activeRef.current = true
+    return () => {
+      activeRef.current = false
+      abortRef.current?.abort()
+    }
+  }, [])
 
   const loadMore = useCallback(async (scrollEl?: HTMLDivElement | null) => {
     if (loadingMore || !hasMore) return
@@ -53,6 +63,9 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
     setSending(true)
     setError(null)
 
+    const controller = new AbortController()
+    abortRef.current = controller
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       session_id: "",
@@ -69,8 +82,9 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
       await sendThreadMessage(parentMessageId, content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
-      })
+      }, controller.signal)
 
+      if (!activeRef.current || controller.signal.aborted) return
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         session_id: "",
@@ -82,12 +96,19 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
       setStreamingContent("")
       onReplySent?.()
     } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return
+      if (!activeRef.current) return
       setError(String(e))
       setStreamingContent("")
     } finally {
-      setSending(false)
+      if (activeRef.current) setSending(false)
     }
   }, [parentMessageId, sending, onReplySent])
 
-  return { messages, hasMore, loading, loadingMore, sending, streamingContent, error, sendMessage, loadMore }
+  const abort = useCallback(() => {
+    activeRef.current = false
+    abortRef.current?.abort()
+  }, [])
+
+  return { messages, hasMore, loading, loadingMore, sending, streamingContent, error, sendMessage, loadMore, abort }
 }
