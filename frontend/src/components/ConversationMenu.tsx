@@ -13,11 +13,12 @@ interface Props {
   onToggle: () => void
   onSelectSession: (sessionId: string | null) => void
   onRenameActive?: (name: string) => void
+  refreshTrigger?: number
 }
 
 const SESSIONS_PAGE_SIZE = 20
 
-export default function ConversationMenu({ activeSessionId, isCurrentEmpty, collapsed, onToggle, onSelectSession, onRenameActive }: Props) {
+export default function ConversationMenu({ activeSessionId, isCurrentEmpty, collapsed, onToggle, onSelectSession, onRenameActive, refreshTrigger }: Props) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(false)
@@ -32,6 +33,10 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
   useEffect(() => {
     if (!collapsed) loadSessions()
   }, [collapsed])
+
+  useEffect(() => {
+    if (refreshTrigger && !collapsed) loadSessions()
+  }, [refreshTrigger])
 
   useEffect(() => {
     if (editingId) editInputRef.current?.focus()

@@ -93,7 +93,7 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
     <div
       className={cn("flex w-full", isAssistant ? "justify-start" : "justify-end")}
     >
-      <div className={cn("group relative max-w-[80%]", isAssistant ? "items-start" : "items-end")}>
+      <div className={cn("group relative", isAssistant ? "w-[80%] items-start" : "max-w-[80%] items-end")}>
         <div
           ref={bubbleRef}
           className={cn(
@@ -191,7 +191,7 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
           <Button
             variant="ghost"
             size="sm"
-            className="mt-1 h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="mt-1 h-7 w-full justify-start px-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => onReply(message)}
           >
             <MessageSquare className="h-3 w-3 mr-1" />

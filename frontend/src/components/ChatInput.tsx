@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { Textarea } from "@/components/ui/textarea"
-import { Send } from "lucide-react"
+import { ArrowUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Props {
@@ -71,13 +71,13 @@ export default function ChatInput({ onSend, disabled, placeholder, focusTrigger 
           disabled={disabled || !hasContent}
           aria-label="Send message"
           className={cn(
-            "inline-flex items-center justify-center h-8 w-8 rounded-lg",
-            "bg-primary text-primary-foreground",
-            "transition-opacity duration-150",
+            "inline-flex items-center justify-center h-7 w-7 rounded-full",
+            "bg-primary/15 text-primary hover:bg-primary/25",
+            "transition-all duration-150",
             hasContent && !disabled ? "opacity-100 cursor-pointer" : "opacity-0 pointer-events-none"
           )}
         >
-          <Send className="h-4 w-4" />
+          <ArrowUp className="h-4 w-4" />
         </button>
       </div>
     </div>

@@ -19,9 +19,11 @@ interface Props {
 }
 
 export default function ChatView({ sessionId, onSelectSession, onUnauthorized }: Props) {
+  const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0)
   const { messages, hasMoreMessages, loadingMore, session, loading, sending, streamingContent, error, sendMessage, loadMoreMessages, loadAllMessages, updateLocalSystemPrompt, incrementReplyCount } =
     useChat(sessionId, (resolvedId) => {
       if (!sessionId) onSelectSession(resolvedId)
+      setSidebarRefreshTrigger((n) => n + 1)
     }, onUnauthorized)
   const [threadParent, setThreadParent] = useState<Message | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -71,14 +73,6 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
     setFocusTrigger((n) => n + 1)
   }, [])
 
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
   const isEmpty = messages.length === 0 && !streamingContent
   const isFirstMessage = !session?.assistant_id
 
@@ -92,6 +86,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         onToggle={() => setSidebarCollapsed((v) => { const next = !v; localStorage.setItem("sidebarCollapsed", String(next)); return next })}
         onSelectSession={handleSelectSession}
         onRenameActive={(name) => setOverrideName(name)}
+        refreshTrigger={sidebarRefreshTrigger}
       />
 
       {/* Main area */}
@@ -142,7 +137,11 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         {/* Messages */}
         <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 relative">
           <div className="max-w-3xl mx-auto w-full h-full">
-            {isEmpty ? (
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : isEmpty ? (
               <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
                 <h2 className="text-lg font-medium">
                   {isFirstMessage ? "Set your conversation context" : "Start chatting"}
@@ -210,7 +209,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         {threadParent && (
           <ThreadDrawer
             parentMessage={threadParent}
-            onClose={() => { threadAbortRef.current?.(); setThreadParent(null) }}
+            onClose={() => { threadAbortRef.current?.(); setThreadParent(null); setFocusTrigger((n) => n + 1) }}
             onReply={(parentId) => incrementReplyCount(parentId, 1)}
             container={mainAreaRef.current}
             onAbortRef={(fn) => { threadAbortRef.current = fn }}

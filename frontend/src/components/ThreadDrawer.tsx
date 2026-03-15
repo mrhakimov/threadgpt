@@ -99,7 +99,7 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
           </div>
 
           <div className="px-4 py-3 border-b bg-muted/50">
-            <p className="text-xs text-muted-foreground mb-1">Replying to</p>
+            <p className="text-xs text-muted-foreground mb-1">Following up on</p>
             <p className="text-sm text-foreground whitespace-pre-wrap line-clamp-5">
               {parentMessage.content}
             </p>
@@ -114,7 +114,7 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
               <>
                 {messages.length === 0 && !streamingContent && (
                   <p className="text-sm text-muted-foreground text-center mt-8">
-                    Start a sub-thread by replying below.
+                    Ask a follow-up question below.
                   </p>
                 )}
                 <MessageList messages={messages} streamingContent={streamingContent} sending={sending} scrollRef={scrollRef} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={loadMore} />
@@ -128,7 +128,7 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
             <ChatInput
               onSend={sendMessage}
               disabled={sending}
-              placeholder="Reply in thread..."
+              placeholder="Ask a follow-up..."
               focusTrigger={1}
             />
           </div>
