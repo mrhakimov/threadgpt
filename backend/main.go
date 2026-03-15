@@ -23,6 +23,7 @@ func securityHeaders(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("X-XSS-Protection", "0")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		if os.Getenv("COOKIE_SECURE") == "true" {
 			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
@@ -62,6 +63,10 @@ func main() {
 
 	if os.Getenv("SUPABASE_URL") == "" || (os.Getenv("SUPABASE_SERVICE_KEY") == "" && os.Getenv("SUPABASE_SECRET_KEY") == "") {
 		log.Fatal("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+	}
+
+	if os.Getenv("ALLOWED_ORIGIN") == "" {
+		log.Println("WARNING: ALLOWED_ORIGIN not set; defaulting to http://localhost:3000 — set this in production")
 	}
 
 	// Load or generate TOKEN_ENCRYPTION_KEY (32 bytes / 64 hex chars).

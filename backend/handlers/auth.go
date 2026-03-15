@@ -293,7 +293,7 @@ func HandleAuth(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   86400,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		Secure:   secure,
 	})
 	w.Header().Set("Cache-Control", "no-store")
@@ -304,6 +304,11 @@ func HandleAuth(w http.ResponseWriter, r *http.Request) {
 func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ip := remoteIP(r)
+	if !checkRateLimit(ip, maxChatPerMinute, &chatRateMu, chatRateMap) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
 	cookie, err := r.Cookie("threadgpt_token")
@@ -322,6 +327,11 @@ func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 func HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ip := remoteIP(r)
+	if !checkRateLimit(ip, maxChatPerMinute, &chatRateMu, chatRateMap) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
 	if cookie, err := r.Cookie("threadgpt_token"); err == nil {

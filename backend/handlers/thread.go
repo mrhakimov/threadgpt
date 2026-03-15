@@ -108,7 +108,7 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Reuse existing thread
 		if existing[0].OpenAIThreadID == nil {
-			http.Error(w, "existing thread has no openai_thread_id", http.StatusInternalServerError)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		threadID = *existing[0].OpenAIThreadID

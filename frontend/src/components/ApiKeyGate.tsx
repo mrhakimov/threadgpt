@@ -9,6 +9,12 @@ interface Props {
   onSubmit: (apiKey: string) => Promise<void>
 }
 
+const isInsecureContext =
+  typeof window !== "undefined" &&
+  window.location.protocol !== "https:" &&
+  window.location.hostname !== "localhost" &&
+  window.location.hostname !== "127.0.0.1"
+
 export default function ApiKeyGate({ onSubmit }: Props) {
   const [value, setValue] = useState("")
   const [loading, setLoading] = useState(false)
@@ -31,6 +37,11 @@ export default function ApiKeyGate({ onSubmit }: Props) {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+      {isInsecureContext && (
+        <div className="w-full max-w-md mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <strong>Warning:</strong> This page is loaded over HTTP. Your API key will be transmitted unencrypted. Use HTTPS in production.
+        </div>
+      )}
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>ThreadGPT</CardTitle>

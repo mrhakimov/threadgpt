@@ -50,7 +50,7 @@ func parsePaginationParams(r *http.Request, defaultLimit int) (limit, offset int
 	limit = defaultLimit
 	offset = 0
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 10000 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = n
 		}
 	}
