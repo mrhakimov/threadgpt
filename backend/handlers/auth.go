@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -30,6 +31,9 @@ var encryptionKey []byte
 // hashKey is set once at startup via SetHashKey (derived separately from encryptionKey).
 var hashKey []byte
 
+// tokenStorePath is the file path used to persist tokens across restarts.
+var tokenStorePath string
+
 // SetEncryptionKey stores the 32-byte AES key used for encrypting API keys at rest.
 func SetEncryptionKey(key []byte) {
 	encryptionKey = key
@@ -38,6 +42,69 @@ func SetEncryptionKey(key []byte) {
 // SetHashKey stores the 32-byte HMAC key used for hashing API keys for DB lookup.
 func SetHashKey(key []byte) {
 	hashKey = key
+}
+
+// SetTokenStorePath sets the file path for persisting tokens and loads any existing tokens.
+func SetTokenStorePath(path string) {
+	tokenStorePath = path
+	loadTokenStore()
+}
+
+type persistedEntry struct {
+	EncryptedAPIKey string    `json:"e"`
+	APIKeyHash      string    `json:"h"`
+	ExpiresAt       time.Time `json:"x"`
+}
+
+func loadTokenStore() {
+	if tokenStorePath == "" {
+		return
+	}
+	data, err := os.ReadFile(tokenStorePath)
+	if err != nil {
+		return // file doesn't exist yet, that's fine
+	}
+	var persisted map[string]persistedEntry
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		log.Println("WARNING: failed to load token store:", err)
+		return
+	}
+	now := time.Now()
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+	for token, e := range persisted {
+		if now.Before(e.ExpiresAt) {
+			tokenStore[token] = tokenEntry{
+				encryptedAPIKey: e.EncryptedAPIKey,
+				apiKeyHash:      e.APIKeyHash,
+				expiresAt:       e.ExpiresAt,
+			}
+		}
+	}
+}
+
+func saveTokenStore() {
+	if tokenStorePath == "" {
+		return
+	}
+	tokenMu.RLock()
+	persisted := make(map[string]persistedEntry, len(tokenStore))
+	for token, e := range tokenStore {
+		persisted[token] = persistedEntry{
+			EncryptedAPIKey: e.encryptedAPIKey,
+			APIKeyHash:      e.apiKeyHash,
+			ExpiresAt:       e.expiresAt,
+		}
+	}
+	tokenMu.RUnlock()
+	data, err := json.Marshal(persisted)
+	if err != nil {
+		log.Println("WARNING: failed to marshal token store:", err)
+		return
+	}
+	if err := os.WriteFile(tokenStorePath, data, 0600); err != nil {
+		log.Println("WARNING: failed to save token store:", err)
+	}
 }
 
 func encryptAPIKey(raw string) (string, error) {
@@ -152,6 +219,7 @@ func storeToken(token, rawAPIKey, apiKeyHash string) error {
 		apiKeyHash:      apiKeyHash,
 		expiresAt:       time.Now().Add(24 * time.Hour),
 	}
+	go saveTokenStore()
 	return nil
 }
 
@@ -176,6 +244,7 @@ func PurgeExpiredTokens() {
 			}
 		}
 		tokenMu.Unlock()
+		saveTokenStore()
 
 		// Purge stale auth rate-limit entries
 		cutoff := time.Now().Add(-time.Minute)
@@ -347,6 +416,7 @@ func HandleLogout(w http.ResponseWriter, r *http.Request) {
 		tokenMu.Lock()
 		delete(tokenStore, cookie.Value)
 		tokenMu.Unlock()
+		go saveTokenStore()
 	}
 	http.SetCookie(w, &http.Cookie{Name: "threadgpt_token", Value: "", Path: "/", MaxAge: -1})
 	w.Header().Set("Cache-Control", "no-store")

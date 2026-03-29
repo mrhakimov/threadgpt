@@ -18,20 +18,32 @@ export async function auth(apiKey: string): Promise<void> {
     body: JSON.stringify({ api_key: apiKey }),
   })
   if (!res.ok) return handleError(res)
+  localStorage.setItem("threadgpt_authed", "1")
 }
 
 export async function checkAuth(): Promise<boolean> {
+  const hasCredentials = localStorage.getItem("threadgpt_authed") === "1"
   try {
     const res = await fetch(`${API_URL}/api/auth/check`, {
       credentials: "include",
     })
-    return res.ok
+    if (res.status === 401 || res.status === 403) {
+      localStorage.removeItem("threadgpt_authed")
+      return false
+    }
+    if (!res.ok) {
+      // Server error / restarting — trust local state
+      return hasCredentials
+    }
+    return true
   } catch {
-    return false
+    // Network error / server restarting — trust local state
+    return hasCredentials
   }
 }
 
 export async function logout(): Promise<void> {
+  localStorage.removeItem("threadgpt_authed")
   await fetch(`${API_URL}/api/auth/logout`, {
     method: "DELETE",
     credentials: "include",

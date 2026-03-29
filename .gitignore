@@ -1,6 +1,7 @@
 # Backend
 backend/.env
 backend/threadgpt
+backend/.token_store.json
 
 # Frontend
 frontend/.env.local

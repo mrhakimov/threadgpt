@@ -86,6 +86,12 @@ func main() {
 	}
 	handlers.SetEncryptionKey(encKey)
 
+	// Persist tokens to disk so they survive restarts.
+	// Only useful when TOKEN_ENCRYPTION_KEY is stable (set in .env).
+	if os.Getenv("TOKEN_ENCRYPTION_KEY") != "" {
+		handlers.SetTokenStorePath(".token_store.json")
+	}
+
 	// Derive a separate HMAC key for API key hashing via HKDF-SHA256.
 	hashKey := make([]byte, 32)
 	hkdfReader := hkdf.New(sha256.New, encKey, nil, []byte("threadgpt-api-key-hash"))
