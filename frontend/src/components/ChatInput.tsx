@@ -49,9 +49,7 @@ export default function ChatInput({ onSend, disabled, placeholder, focusTrigger 
       onClick={() => textareaRef.current?.focus()}
       className={cn(
         "relative flex flex-col rounded-2xl border bg-muted/50 px-4 pt-3 pb-3 transition-shadow cursor-text",
-        isFocused
-          ? "shadow-[0_0_0_2px_hsl(var(--ring))]"
-          : "shadow-sm hover:shadow-md"
+        isFocused ? "shadow-md" : "shadow-md"
       )}
     >
       <Textarea

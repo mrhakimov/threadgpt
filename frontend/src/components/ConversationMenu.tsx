@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, KeyboardEvent } from "react"
 import { Button } from "@/components/ui/button"
-import { PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, X, Pencil, Trash2, Check, Loader2 } from "lucide-react"
+import { PanelLeftOpen, PanelLeftClose, Plus, X, Pencil, Trash2, Check, Loader2 } from "lucide-react"
 import { fetchSessions, renameSession, deleteSession } from "@/lib/api"
 import { Session } from "@/types"
 import { MIN_LOADING_MS } from "@/lib/constants"
@@ -211,7 +211,6 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
               >
                 {editingId === s.session_id ? (
                   <>
-                    <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <input
                       ref={editInputRef}
                       className="flex-1 min-w-0 bg-transparent outline-none text-sm"
@@ -230,11 +229,10 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
                 ) : (
                   <>
                     <button
-                      className="flex-1 min-w-0 flex items-start gap-2 text-left"
+                      className="flex-1 min-w-0 text-left"
                       onClick={() => onSelectSession(s.session_id ?? null)}
                     >
-                      <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{getSessionLabel(s)}</span>
+                      <span className="block truncate">{getSessionLabel(s)}</span>
                     </button>
                     {confirmDeleteId === s.session_id ? (
                       <div className="shrink-0 flex items-center gap-1">

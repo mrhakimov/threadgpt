@@ -22,11 +22,20 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
   const [streamingContent, setStreamingContent] = useState("")
   const [error, setError] = useState<string | null>(null)
 
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+
   useEffect(() => {
     let cancelled = false
 
     async function init() {
       try {
+        // If the session was just resolved from a new conversation (null → ID),
+        // the messages are already in state from sendMessage — skip re-fetching.
+        if (sessionId && sessionRef.current?.session_id === sessionId) {
+          return
+        }
+
         setLoading(true)
         setMessages([])
         setHasMoreMessages(false)

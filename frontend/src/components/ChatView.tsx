@@ -12,6 +12,10 @@ import { ChevronDown, Loader2, Settings } from "lucide-react"
 import SettingsPage from "./SettingsPage"
 import { updateSystemPrompt } from "@/lib/api"
 import { MIN_LOADING_MS } from "@/lib/constants"
+import { cn } from "@/lib/utils"
+import { useTheme } from "@/hooks/useTheme"
+
+const SETTINGS_ANIMATION_MS = 220
 
 interface Props {
   sessionId: string | null | undefined
@@ -20,6 +24,7 @@ interface Props {
 }
 
 export default function ChatView({ sessionId, onSelectSession, onUnauthorized }: Props) {
+  const { theme, setTheme } = useTheme()
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0)
   const { messages, hasMoreMessages, loadingMore, session, loading, sending, streamingContent, error, sendMessage, loadMoreMessages, loadAllMessages, updateLocalSystemPrompt, incrementReplyCount } =
     useChat(sessionId, (resolvedId) => {
@@ -31,6 +36,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
   const loadStartRef = useRef(Date.now())
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [closingSettings, setClosingSettings] = useState(false)
   const [focusTrigger, setFocusTrigger] = useState(0)
   const [overrideName, setOverrideName] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -40,6 +46,8 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
   const scrollRef = useRef<HTMLDivElement>(null)
   const mainAreaRef = useRef<HTMLDivElement>(null)
   const threadAbortRef = useRef<(() => void) | null>(null)
+  const prevSessionIdRef = useRef<string | null | undefined>(sessionId)
+  const settingsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleSelectSession = useCallback((id: string | null) => {
     threadAbortRef.current?.()
@@ -48,6 +56,14 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
   }, [onSelectSession])
 
   useEffect(() => {
+    const prev = prevSessionIdRef.current
+    prevSessionIdRef.current = sessionId
+
+    // When a new session resolves (null → ID), don't reset the loading state —
+    // messages are already displayed from sendMessage.
+    const isSessionResolution = prev === null && typeof sessionId === "string"
+    if (isSessionResolution) return
+
     threadAbortRef.current?.()
     setThreadParent(null)
     setFocusTrigger((n) => n + 1)
@@ -88,6 +104,31 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
   const scrollToBottom = useCallback(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
     setFocusTrigger((n) => n + 1)
+  }, [])
+
+  const handleOpenSettings = useCallback(() => {
+    if (settingsCloseTimerRef.current) {
+      clearTimeout(settingsCloseTimerRef.current)
+      settingsCloseTimerRef.current = null
+    }
+    setClosingSettings(false)
+    setShowSettings(true)
+  }, [])
+
+  const handleCloseSettings = useCallback(() => {
+    if (closingSettings) return
+    setClosingSettings(true)
+    settingsCloseTimerRef.current = setTimeout(() => {
+      setShowSettings(false)
+      setClosingSettings(false)
+      settingsCloseTimerRef.current = null
+    }, SETTINGS_ANIMATION_MS)
+  }, [closingSettings])
+
+  useEffect(() => {
+    return () => {
+      if (settingsCloseTimerRef.current) clearTimeout(settingsCloseTimerRef.current)
+    }
   }, [])
 
   const isEmpty = messages.length === 0 && !streamingContent
@@ -145,8 +186,13 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
                 <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
               </svg>
             </a>
-            <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)}>
-              <Settings className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={handleOpenSettings}>
+              <Settings
+                className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  showSettings && !closingSettings && "rotate-90"
+                )}
+              />
             </Button>
           </div>
         </header>
@@ -235,7 +281,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
 
         {/* Settings */}
         {showSettings && (
-          <SettingsPage onClose={() => setShowSettings(false)} onLogout={onUnauthorized} />
+          <SettingsPage closing={closingSettings} onClose={handleCloseSettings} onLogout={onUnauthorized} theme={theme} setTheme={setTheme} />
         )}
       </div>{/* end main area */}
     </div>
