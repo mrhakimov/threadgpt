@@ -1,18 +1,9 @@
 package handlers
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
-	"threadgpt/db"
-	"threadgpt/openai"
 )
-
-type SessionRequest struct{}
 
 type SessionResponse struct {
 	SessionID    string  `json:"session_id"`
@@ -22,13 +13,8 @@ type SessionResponse struct {
 	IsNew        bool    `json:"is_new"`
 }
 
-func hashAPIKey(apiKey string) string {
-	mac := hmac.New(sha256.New, hashKey)
-	mac.Write([]byte(apiKey))
-	return hex.EncodeToString(mac.Sum(nil))
-}
+const defaultSessionsLimit = 20
 
-// HandleSessions handles GET (list) and POST (create named session)
 func HandleSessions(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -40,28 +26,23 @@ func HandleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-const defaultSessionsLimit = 20
-
 func handleListSessions(w http.ResponseWriter, r *http.Request) {
-	apiKeyHash := APIKeyHashFromContext(r.Context())
-
 	limit := defaultSessionsLimit
 	offset := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = n
+	if value := r.URL.Query().Get("limit"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
 		}
 	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
+	if value := r.URL.Query().Get("offset"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
+			offset = parsed
 		}
 	}
 
-	sessions, err := db.GetSessions(apiKeyHash, limit, offset)
+	sessions, err := app().sessions.List(r.Context(), APIKeyHashFromContext(r.Context()), limit, offset)
 	if err != nil {
-		log.Printf("sessions: GetSessions error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		writeServiceError(w, err)
 		return
 	}
 
@@ -73,24 +54,24 @@ func handleListSessions(w http.ResponseWriter, r *http.Request) {
 		CreatedAt    string  `json:"created_at"`
 	}
 
-	result := make([]item, len(sessions))
-	for i, s := range sessions {
-		result[i] = item{
-			SessionID:    s.ID,
-			AssistantID:  s.AssistantID,
-			SystemPrompt: s.SystemPrompt,
-			Name:         s.Name,
-			CreatedAt:    s.CreatedAt,
+	items := make([]item, len(sessions))
+	for i, session := range sessions {
+		items[i] = item{
+			SessionID:    session.ID,
+			AssistantID:  session.AssistantID,
+			SystemPrompt: session.SystemPrompt,
+			Name:         session.Name,
+			CreatedAt:    session.CreatedAt,
 		}
 	}
 
-	type response struct {
+	writeJSON(w, http.StatusOK, struct {
 		Sessions []item `json:"sessions"`
 		HasMore  bool   `json:"has_more"`
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response{Sessions: result, HasMore: len(sessions) == limit})
+	}{
+		Sessions: items,
+		HasMore:  len(sessions) == limit,
+	})
 }
 
 type CreateSessionRequest struct {
@@ -100,7 +81,7 @@ type CreateSessionRequest struct {
 func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1*1024)
 	var req CreateSessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -114,26 +95,19 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash := APIKeyHashFromContext(r.Context())
-	session, err := db.CreateNamedSession(hash, name)
+	session, err := app().sessions.CreateNamed(r.Context(), APIKeyHashFromContext(r.Context()), name)
 	if err != nil {
-		log.Printf("sessions: CreateNamedSession error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		writeServiceError(w, err)
 		return
 	}
 
-	resp := SessionResponse{
+	writeJSON(w, http.StatusOK, SessionResponse{
 		SessionID: session.ID,
 		Name:      session.Name,
 		IsNew:     true,
-	}
-
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	})
 }
 
-// HandleSessionByID handles GET (fetch), PATCH (rename/update) and DELETE for a specific session ID
 func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Path[len("/api/sessions/"):]
 	if sessionID == "" {
@@ -145,57 +119,29 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash := APIKeyHashFromContext(r.Context())
+	apiKeyHash := APIKeyHashFromContext(r.Context())
 
 	switch r.Method {
 	case http.MethodGet:
-		session, err := db.GetSessionByID(sessionID)
+		session, err := app().sessions.GetByID(r.Context(), apiKeyHash, sessionID)
 		if err != nil {
-			log.Printf("sessions: GetSessionByID error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			writeServiceError(w, err)
 			return
 		}
-		if session == nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		if session.APIKeyHash != hash {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		resp := SessionResponse{
+		writeJSON(w, http.StatusOK, SessionResponse{
 			SessionID:    session.ID,
 			AssistantID:  session.AssistantID,
 			SystemPrompt: session.SystemPrompt,
 			Name:         session.Name,
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		})
 
 	case http.MethodPatch:
-		// Ownership check first
-		session, err := db.GetSessionByID(sessionID)
-		if err != nil {
-			log.Printf("sessions: GetSessionByID error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if session == nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		if session.APIKeyHash != hash {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-
 		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 		var req struct {
 			Name         string `json:"name"`
 			SystemPrompt string `json:"system_prompt"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeJSON(r, &req); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -211,49 +157,16 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "system prompt too long", http.StatusBadRequest)
 			return
 		}
-		if req.Name != "" {
-			if err := db.RenameSession(sessionID, req.Name); err != nil {
-				log.Printf("sessions: RenameSession error: %v", err)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
-				return
-			}
-		}
-		if req.SystemPrompt != "" {
-			apiKey := APIKeyFromContext(r.Context())
-			if session.AssistantID != nil {
-				if err := openai.UpdateAssistantInstructions(apiKey, *session.AssistantID, req.SystemPrompt); err != nil {
-					log.Printf("sessions: UpdateAssistantInstructions error: %v", err)
-					http.Error(w, "internal server error", http.StatusInternalServerError)
-					return
-				}
-			}
-			if err := db.SetSystemPrompt(sessionID, req.SystemPrompt); err != nil {
-				log.Printf("sessions: SetSystemPrompt error: %v", err)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
-				return
-			}
+
+		if err := app().sessions.Update(r.Context(), APIKeyFromContext(r.Context()), apiKeyHash, sessionID, req.Name, req.SystemPrompt); err != nil {
+			writeServiceError(w, err)
+			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodDelete:
-		// Ownership check first
-		session, err := db.GetSessionByID(sessionID)
-		if err != nil {
-			log.Printf("sessions: GetSessionByID error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if session == nil {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		if session.APIKeyHash != hash {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		if err := db.DeleteSession(sessionID); err != nil {
-			log.Printf("sessions: DeleteSession error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+		if err := app().sessions.Delete(r.Context(), apiKeyHash, sessionID); err != nil {
+			writeServiceError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -263,37 +176,26 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleSession handles the legacy single-session init (used by useChat on startup)
 func HandleSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	hash := APIKeyHashFromContext(r.Context())
-	session, err := db.GetSession(hash)
+	session, err := app().sessions.GetCurrent(r.Context(), APIKeyHashFromContext(r.Context()))
 	if err != nil {
-		log.Printf("session: GetSession error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		writeServiceError(w, err)
 		return
 	}
-
-	resp := SessionResponse{}
 	if session == nil {
-		resp.IsNew = true
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		writeJSON(w, http.StatusOK, SessionResponse{IsNew: true})
 		return
 	}
 
-	resp.SessionID = session.ID
-	resp.AssistantID = session.AssistantID
-	resp.SystemPrompt = session.SystemPrompt
-	resp.Name = session.Name
-
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, SessionResponse{
+		SessionID:    session.ID,
+		AssistantID:  session.AssistantID,
+		SystemPrompt: session.SystemPrompt,
+		Name:         session.Name,
+	})
 }

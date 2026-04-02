@@ -8,3 +8,6 @@
 - add donation link
 - get rid of full refresh when clicking "New conversation" and sending the first message
 - choose colors from here: https://coolors.co/palette/f8f9fa-e9ecef-dee2e6-ced4da-adb5bd-6c757d-495057-343a40-212529
+- support anthropic
+- add model selection to the thread view
+- dark mode

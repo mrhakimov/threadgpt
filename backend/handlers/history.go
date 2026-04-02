@@ -1,16 +1,13 @@
 package handlers
 
 import (
-	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
-	"threadgpt/db"
+	"threadgpt/domain"
 )
 
 const defaultMessagesLimit = 10
 
-// MessageDTO is the public representation of a message — excludes internal fields like openai_thread_id.
 type MessageDTO struct {
 	ID              string  `json:"id"`
 	SessionID       string  `json:"session_id"`
@@ -21,45 +18,9 @@ type MessageDTO struct {
 	CreatedAt       string  `json:"created_at"`
 }
 
-func toMessageDTO(m db.Message) MessageDTO {
-	return MessageDTO{
-		ID:              m.ID,
-		SessionID:       m.SessionID,
-		Role:            m.Role,
-		Content:         m.Content,
-		ParentMessageID: m.ParentMessageID,
-		ReplyCount:      m.ReplyCount,
-		CreatedAt:       m.CreatedAt,
-	}
-}
-
-func toMessageDTOs(msgs []db.Message) []MessageDTO {
-	out := make([]MessageDTO, len(msgs))
-	for i, m := range msgs {
-		out[i] = toMessageDTO(m)
-	}
-	return out
-}
-
 type messagesResponse struct {
 	Messages []MessageDTO `json:"messages"`
 	HasMore  bool         `json:"has_more"`
-}
-
-func parsePaginationParams(r *http.Request, defaultLimit int) (limit, offset int) {
-	limit = defaultLimit
-	offset = 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = n
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 10000 {
-			offset = n
-		}
-	}
-	return
 }
 
 func HandleHistory(w http.ResponseWriter, r *http.Request) {
@@ -68,60 +29,56 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash := APIKeyHashFromContext(r.Context())
-	limit, offset := parsePaginationParams(r, defaultMessagesLimit)
-
-	// Optional session_id filter — passed via X-Session-ID header to avoid URL exposure
 	sessionID := r.Header.Get("X-Session-ID")
-	if sessionID != "" {
-		if !isValidUUID(sessionID) {
-			http.Error(w, "invalid session id", http.StatusBadRequest)
-			return
-		}
-		session, err := db.GetSessionByID(sessionID)
-		if err != nil {
-			log.Printf("history: GetSessionByID error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if session == nil || session.APIKeyHash != hash {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		messages, err := db.GetMessagesDesc(sessionID, limit, offset)
-		if err != nil {
-			log.Printf("history: GetMessagesDesc error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(messagesResponse{Messages: toMessageDTOs(messages), HasMore: len(messages) == limit})
+	if sessionID != "" && !isValidUUID(sessionID) {
+		http.Error(w, "invalid session id", http.StatusBadRequest)
 		return
 	}
 
-	session, err := db.GetSession(hash)
+	limit, offset := parsePaginationParams(r, defaultMessagesLimit)
+	messages, err := app().history.Get(r.Context(), APIKeyHashFromContext(r.Context()), sessionID, limit, offset)
 	if err != nil {
-		log.Printf("history: GetSession error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		writeServiceError(w, err)
 		return
 	}
 
-	if session == nil {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(messagesResponse{Messages: []MessageDTO{}, HasMore: false})
-		return
-	}
+	writeJSON(w, http.StatusOK, messagesResponse{
+		Messages: toMessageDTOs(messages),
+		HasMore:  len(messages) == limit,
+	})
+}
 
-	messages, err := db.GetMessagesDesc(session.ID, limit, offset)
-	if err != nil {
-		log.Printf("history: GetMessagesDesc error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
+func parsePaginationParams(r *http.Request, defaultLimit int) (limit, offset int) {
+	limit = defaultLimit
+	if value := r.URL.Query().Get("limit"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
 	}
+	if value := r.URL.Query().Get("offset"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 && parsed <= 10000 {
+			offset = parsed
+		}
+	}
+	return limit, offset
+}
 
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messagesResponse{Messages: toMessageDTOs(messages), HasMore: len(messages) == limit})
+func toMessageDTO(message domain.Message) MessageDTO {
+	return MessageDTO{
+		ID:              message.ID,
+		SessionID:       message.SessionID,
+		Role:            message.Role,
+		Content:         message.Content,
+		ParentMessageID: message.ParentMessageID,
+		ReplyCount:      message.ReplyCount,
+		CreatedAt:       message.CreatedAt,
+	}
+}
+
+func toMessageDTOs(messages []domain.Message) []MessageDTO {
+	items := make([]MessageDTO, len(messages))
+	for i, message := range messages {
+		items[i] = toMessageDTO(message)
+	}
+	return items
 }

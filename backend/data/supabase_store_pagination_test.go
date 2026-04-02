@@ -1,18 +1,20 @@
-package db
+package data
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"sort"
 	"testing"
+	"threadgpt/domain"
 	"time"
 )
 
 // setupTestServer creates a fake Supabase server that returns messages in desc order
 // (newest first), simulating what real Supabase does with order=created_at.desc
-func setupTestServer(t *testing.T, allMessages []Message) *httptest.Server {
+func setupTestServer(t *testing.T, allMessages []domain.Message) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -35,8 +37,7 @@ func setupTestServer(t *testing.T, allMessages []Message) *httptest.Server {
 			}
 		}
 
-		// Sort messages according to requested order
-		msgs := make([]Message, len(allMessages))
+		msgs := make([]domain.Message, len(allMessages))
 		copy(msgs, allMessages)
 		if order == "created_at.desc" {
 			sort.Slice(msgs, func(i, j int) bool {
@@ -48,9 +49,8 @@ func setupTestServer(t *testing.T, allMessages []Message) *httptest.Server {
 			})
 		}
 
-		// Apply offset and limit
 		if offset >= len(msgs) {
-			msgs = []Message{}
+			msgs = []domain.Message{}
 		} else {
 			msgs = msgs[offset:]
 			if limit < len(msgs) {
@@ -59,17 +59,16 @@ func setupTestServer(t *testing.T, allMessages []Message) *httptest.Server {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(msgs)
+		_ = json.NewEncoder(w).Encode(msgs)
 	}))
 	return srv
 }
 
-// makeMessages creates N messages with sequential created_at timestamps
-func makeMessages(n int) []Message {
-	msgs := make([]Message, n)
+func makeMessages(n int) []domain.Message {
+	msgs := make([]domain.Message, n)
 	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < n; i++ {
-		msgs[i] = Message{
+		msgs[i] = domain.Message{
 			ID:        string(rune('a' + i)),
 			SessionID: "sess1",
 			Role:      "user",
@@ -80,8 +79,7 @@ func makeMessages(n int) []Message {
 	return msgs
 }
 
-func TestGetMessagesDesc_InitialPage(t *testing.T) {
-	// 25 messages total. Initial load: offset=0, limit=10 → should return msgs 15..24 (newest 10) in asc order
+func TestGetMainDesc_InitialPage(t *testing.T) {
 	allMsgs := makeMessages(25)
 	srv := setupTestServer(t, allMsgs)
 	defer srv.Close()
@@ -89,20 +87,19 @@ func TestGetMessagesDesc_InitialPage(t *testing.T) {
 	os.Setenv("SUPABASE_URL", srv.URL)
 	os.Setenv("SUPABASE_SERVICE_KEY", "test")
 
-	msgs, err := GetMessagesDesc("sess1", 10, 0)
+	store := NewSupabaseStore()
+	msgs, err := store.GetMainDesc(context.Background(), "sess1", 10, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(msgs) != 10 {
 		t.Fatalf("expected 10 messages, got %d", len(msgs))
 	}
-	// Should be in ascending order (oldest of the page first)
 	for i := 1; i < len(msgs); i++ {
 		if msgs[i].CreatedAt < msgs[i-1].CreatedAt {
 			t.Errorf("messages not in asc order at index %d: %s < %s", i, msgs[i].CreatedAt, msgs[i-1].CreatedAt)
 		}
 	}
-	// Should be the newest 10: indices 15..24
 	if msgs[0].ID != string(rune('a'+15)) {
 		t.Errorf("expected first msg to be index 15 (%c), got %s", 'a'+15, msgs[0].ID)
 	}
@@ -111,8 +108,7 @@ func TestGetMessagesDesc_InitialPage(t *testing.T) {
 	}
 }
 
-func TestGetMessagesDesc_LoadMorePage(t *testing.T) {
-	// After loading 10 newest, load-more sends offset=10 → should return msgs 5..14 (next older 10) in asc order
+func TestGetMainDesc_LoadMorePage(t *testing.T) {
 	allMsgs := makeMessages(25)
 	srv := setupTestServer(t, allMsgs)
 	defer srv.Close()
@@ -120,20 +116,19 @@ func TestGetMessagesDesc_LoadMorePage(t *testing.T) {
 	os.Setenv("SUPABASE_URL", srv.URL)
 	os.Setenv("SUPABASE_SERVICE_KEY", "test")
 
-	msgs, err := GetMessagesDesc("sess1", 10, 10)
+	store := NewSupabaseStore()
+	msgs, err := store.GetMainDesc(context.Background(), "sess1", 10, 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(msgs) != 10 {
 		t.Fatalf("expected 10 messages, got %d", len(msgs))
 	}
-	// Should be in ascending order
 	for i := 1; i < len(msgs); i++ {
 		if msgs[i].CreatedAt < msgs[i-1].CreatedAt {
 			t.Errorf("messages not in asc order at index %d", i)
 		}
 	}
-	// Should be indices 5..14
 	if msgs[0].ID != string(rune('a'+5)) {
 		t.Errorf("expected first msg index 5 (%c), got %s", 'a'+5, msgs[0].ID)
 	}
@@ -142,9 +137,7 @@ func TestGetMessagesDesc_LoadMorePage(t *testing.T) {
 	}
 }
 
-func TestGetMessagesDesc_FullCombinedOrder(t *testing.T) {
-	// Simulate: load page 1 (offset=0), then load page 2 (offset=10), prepend.
-	// Combined result should be msgs 5..24 in ascending order.
+func TestGetMainDesc_FullCombinedOrder(t *testing.T) {
 	allMsgs := makeMessages(25)
 	srv := setupTestServer(t, allMsgs)
 	defer srv.Close()
@@ -152,20 +145,16 @@ func TestGetMessagesDesc_FullCombinedOrder(t *testing.T) {
 	os.Setenv("SUPABASE_URL", srv.URL)
 	os.Setenv("SUPABASE_SERVICE_KEY", "test")
 
-	page1, _ := GetMessagesDesc("sess1", 10, 0)  // newest 10: indices 15..24 asc
-	page2, _ := GetMessagesDesc("sess1", 10, 10) // next older 10: indices 5..14 asc
-
-	// Frontend prepends: [...page2, ...page1]
+	store := NewSupabaseStore()
+	page1, _ := store.GetMainDesc(context.Background(), "sess1", 10, 0)
+	page2, _ := store.GetMainDesc(context.Background(), "sess1", 10, 10)
 	combined := append(page2, page1...)
 
-	// Verify overall ascending order
 	for i := 1; i < len(combined); i++ {
 		if combined[i].CreatedAt < combined[i-1].CreatedAt {
-			t.Errorf("combined not in asc order at index %d: %s before %s",
-				i, combined[i-1].ID, combined[i].ID)
+			t.Errorf("combined not in asc order at index %d: %s before %s", i, combined[i-1].ID, combined[i].ID)
 		}
 	}
-	// Should start at index 5, end at index 24
 	if combined[0].ID != string(rune('a'+5)) {
 		t.Errorf("combined should start at index 5, got %s", combined[0].ID)
 	}
