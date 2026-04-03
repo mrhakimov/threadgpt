@@ -201,7 +201,7 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
                 }}
               />
             ))}
-            {(hasMore || loadingMore) && (
+            {!showLoadingSessions && loadingMore && (
               <div className="flex justify-center py-2">
                 <LoadingSpinner className="h-3.5 w-3.5" />
               </div>

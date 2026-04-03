@@ -62,6 +62,7 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
 
   useEffect(() => {
     setCanLoadMoreOnScroll(false)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
   }, [parentMessage.id])
 
   const handleClose = useCallback(() => {
@@ -95,6 +96,13 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
   const overlayAnim = closing
     ? "overlay-out 300ms ease forwards"
     : "overlay-in 300ms ease forwards"
+  const showEmptyState = messages.length === 0 && !streamingContent && !sending
+  const showThreadMessages = !showEmptyState || loadingMore
+  const bodyClassName = showLoading
+    ? "flex-1 overflow-hidden px-4"
+    : showEmptyState
+    ? "flex-1 overflow-hidden px-4"
+    : "flex-1 overflow-y-auto px-4"
 
   return (
     <>
@@ -131,19 +139,35 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
             </div>
           </div>
 
-          <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4">
+          <div ref={scrollRef} onScroll={handleScroll} className={bodyClassName}>
             {showLoading ? (
               <div className="flex h-full items-center justify-center">
                 <LoadingSpinner className="h-5 w-5" />
               </div>
             ) : (
               <>
-                {messages.length === 0 && !streamingContent && (
-                  <p className="text-sm text-muted-foreground text-center mt-8">
-                    Ask a follow-up question below.
-                  </p>
+                {showEmptyState && (
+                  <div className="pt-6">
+                    <p className="text-sm text-center text-muted-foreground">
+                      Ask a follow-up question below.
+                    </p>
+                  </div>
                 )}
-                <MessageList messages={messages} streamingContent={streamingContent} sending={sending} scrollRef={scrollRef} scrollContextKey={parentMessage.id} onInitialScrollComplete={() => setCanLoadMoreOnScroll(true)} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={loadMore} />
+                {showThreadMessages && (
+                  <MessageList
+                    messages={messages}
+                    streamingContent={streamingContent}
+                    sending={sending}
+                    scrollRef={scrollRef}
+                    scrollContextKey={parentMessage.id}
+                    onInitialScrollComplete={() => setCanLoadMoreOnScroll(true)}
+                    hasMore={hasMore}
+                    loadingMore={loadingMore}
+                    onLoadMore={loadMore}
+                    contentAlignment="top"
+                    initialScrollPosition="bottom"
+                  />
+                )}
               </>
             )}
           </div>

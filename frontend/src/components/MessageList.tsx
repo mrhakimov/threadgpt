@@ -18,9 +18,26 @@ interface Props {
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
+  contentAlignment?: "top" | "bottom"
+  initialScrollPosition?: "top" | "bottom"
 }
 
-export default function MessageList({ messages, streamingContent, sending, onReply, onEditSystemPrompt, scrollRef, scrollContextKey, onInitialScrollComplete, showSystemPrompt, hasMore, loadingMore, onLoadMore }: Props) {
+export default function MessageList({
+  messages,
+  streamingContent,
+  sending,
+  onReply,
+  onEditSystemPrompt,
+  scrollRef,
+  scrollContextKey,
+  onInitialScrollComplete,
+  showSystemPrompt,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+  contentAlignment = "bottom",
+  initialScrollPosition = "bottom",
+}: Props) {
   const didInitialScroll = useRef(false)
   const firstMessageIdRef = useRef<string | undefined>(undefined)
   const lastMessageIdRef = useRef<string | undefined>(undefined)
@@ -66,6 +83,13 @@ export default function MessageList({ messages, streamingContent, sending, onRep
 
     if (!didInitialScroll.current && messages.length > 0) {
       didInitialScroll.current = true
+
+      if (initialScrollPosition === "top") {
+        el.scrollTop = 0
+        onInitialScrollComplete?.()
+        return
+      }
+
       let raf1 = 0
       let raf2 = 0
 
@@ -91,10 +115,10 @@ export default function MessageList({ messages, streamingContent, sending, onRep
     if (!tailChanged && !streamingChanged) return
 
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-  }, [messages, streamingContent, scrollRef, onInitialScrollComplete])
+  }, [messages, streamingContent, scrollRef, onInitialScrollComplete, initialScrollPosition])
 
   return (
-    <div className="min-h-full flex flex-col justify-end gap-4 py-4">
+    <div className={`min-h-full flex flex-col gap-4 py-4 ${contentAlignment === "top" ? "justify-start" : "justify-end"}`}>
       {loadingMore && (
         <div className="flex justify-center py-2">
           <LoadingSpinner className="h-4 w-4" />

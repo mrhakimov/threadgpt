@@ -147,4 +147,32 @@ describe("MessageList", () => {
 
     expect(queryByTestId("loading-spinner")).toBeInTheDocument()
   })
+
+  it("can start from the top when configured for thread drawers", async () => {
+    const onInitialScrollComplete = vi.fn()
+    const scrollEl = document.createElement("div")
+    scrollEl.scrollTo = vi.fn()
+    Object.defineProperty(scrollEl, "scrollHeight", { value: 600, configurable: true })
+    Object.defineProperty(scrollEl, "scrollTop", { value: 240, writable: true, configurable: true })
+
+    const scrollRef = { current: scrollEl }
+    const messages = [createMessage("m-1"), createMessage("m-2")]
+
+    const { container } = render(
+      <MessageList
+        messages={messages}
+        scrollRef={scrollRef}
+        contentAlignment="top"
+        initialScrollPosition="top"
+        onInitialScrollComplete={onInitialScrollComplete}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(scrollEl.scrollTop).toBe(0)
+    })
+
+    expect(onInitialScrollComplete).toHaveBeenCalled()
+    expect(container.firstChild).toHaveClass("justify-start")
+  })
 })
