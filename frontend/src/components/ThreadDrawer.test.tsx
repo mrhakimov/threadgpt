@@ -124,4 +124,24 @@ describe("ThreadDrawer", () => {
       }),
     )
   })
+
+  it("renders the following-up section inside its own full-width divider", () => {
+    render(
+      <ThreadDrawer
+        parentMessage={createMessage("parent", "Parent message")}
+        onClose={vi.fn()}
+      />,
+    )
+
+    act(() => {
+      vi.runAllTimers()
+    })
+
+    const followingUpLabel = screen.getByText("Following up on")
+    const dividerSection = followingUpLabel.closest(".border-b")
+
+    expect(dividerSection).toBeTruthy()
+    expect(dividerSection).not.toHaveClass("px-4")
+    expect(dividerSection?.firstElementChild).toHaveClass("px-4", "py-3")
+  })
 })

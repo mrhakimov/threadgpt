@@ -127,14 +127,16 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
             </Button>
           </div>
 
-          <div className="px-4 py-3">
-            <div className="flex gap-3 items-start">
-              <div className="w-0.5 self-stretch rounded-full bg-muted-foreground/25 shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50 mb-1">Following up on</p>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed">
-                  {parentMessage.content}
-                </p>
+          <div className="border-b">
+            <div className="px-4 py-3">
+              <div className="flex gap-3 items-start">
+                <div className="w-0.5 self-stretch rounded-full bg-muted-foreground/25 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50 mb-1">Following up on</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed">
+                    {parentMessage.content}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
