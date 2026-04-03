@@ -15,3 +15,4 @@
 - Share a thread
 - Export thread + export all threads (all data)
 - Keyboard shortcuts
+- file upload
