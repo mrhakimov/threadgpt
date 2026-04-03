@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"threadgpt/data"
 	"threadgpt/handlers"
 	"threadgpt/service"
@@ -38,6 +39,21 @@ func securityHeaders(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func isAllowedOrigin(origin, configured string) bool {
+	if origin == configured {
+		return true
+	}
+	if configured == "" || configured == defaultAllowedOrigin || configured == "dev" {
+		if strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1:") ||
+			strings.HasSuffix(origin, ".ngrok-free.app") ||
+			strings.HasSuffix(origin, ".ngrok.io") {
+			return true
+		}
+	}
+	return false
+}
+
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
@@ -47,8 +63,8 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		w.Header().Set("Vary", "Origin")
 		origin := r.Header.Get("Origin")
-		if origin == allowedOrigin {
-			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		if isAllowedOrigin(origin, allowedOrigin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-ID")

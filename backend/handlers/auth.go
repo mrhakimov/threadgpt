@@ -93,13 +93,17 @@ func (a *Application) HandleAuth(w http.ResponseWriter, r *http.Request) {
 	secure := r.TLS != nil || os.Getenv("COOKIE_SECURE") == "true" ||
 		(strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") && os.Getenv("TRUSTED_PROXY") == "true")
 
+	sameSite := http.SameSiteStrictMode
+	if secure {
+		sameSite = http.SameSiteNoneMode
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "threadgpt_token",
 		Value:    token,
 		Path:     "/",
 		MaxAge:   86400,
 		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: sameSite,
 		Secure:   secure,
 	})
 
@@ -182,7 +186,13 @@ func (a *Application) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		a.auth.Logout(cookie.Value)
 	}
 
-	http.SetCookie(w, &http.Cookie{Name: "threadgpt_token", Value: "", Path: "/", MaxAge: -1})
+	secure := r.TLS != nil || os.Getenv("COOKIE_SECURE") == "true" ||
+		(strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") && os.Getenv("TRUSTED_PROXY") == "true")
+	sameSite := http.SameSiteStrictMode
+	if secure {
+		sameSite = http.SameSiteNoneMode
+	}
+	http.SetCookie(w, &http.Cookie{Name: "threadgpt_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: sameSite, Secure: secure})
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }

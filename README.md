@@ -70,11 +70,11 @@ Examples:
 
 ### 1. Create the database schema
 
-Create a Supabase project, then run [`20260403_1410_initial_schema.sql`](/Users/john/Documents/projects/threadgpt/migrations/20260403_1410_initial_schema.sql) in the Supabase SQL editor.
+Create a Supabase project, then run [`20260403_1410_initial_schema.sql`](https://github.com/mrhakimov/threadgpt/blob/main/migrations/20260403_1410_initial_schema.sql) in the Supabase SQL editor.
 
 ### 2. Configure the backend
 
-Create [`backend/.env`](/Users/john/Documents/projects/threadgpt/backend/.env):
+Create `backend/.env` based on [`backend/.env.example`](https://github.com/mrhakimov/threadgpt/blob/main/backend/.env.example):
 
 ```env
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
@@ -99,7 +99,7 @@ openssl rand -hex 32
 
 ### 3. Configure the frontend
 
-Create [`frontend/.env.local`](/Users/john/Documents/projects/threadgpt/frontend/.env.local):
+Create `frontend/.env.local` based on [`frontend/.env.example`](https://github.com/mrhakimov/threadgpt/blob/main/frontend/.env.example):
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -135,10 +135,10 @@ Then open `http://localhost:3000`.
 ## Local Development Notes
 
 - The app asks the user for their OpenAI API key and stores encrypted session data server-side for authentication.
-- When `TOKEN_ENCRYPTION_KEY` is set, the token store is also persisted to [`backend/.token_store.json`](/Users/john/Documents/projects/threadgpt/backend/.token_store.json).
+- When `TOKEN_ENCRYPTION_KEY` is set, the token store is also persisted to `backend/.token_store.json`.
 - The raw API key is never stored in the database.
 - The frontend defaults to `localhost:3000`.
-- There is also a helper script at [`scripts/restart.sh`](/Users/john/Documents/projects/threadgpt/scripts/restart.sh) that restarts both servers and starts the frontend on port `3000`.
+- There is also a helper script at [`scripts/restart.sh`](https://github.com/mrhakimov/threadgpt/blob/main/scripts/restart.sh) that restarts both servers and starts the frontend on port `3000`.
 
 ## Development Workflow
 
@@ -150,10 +150,10 @@ Per the repo instructions, after any significant change:
 
 ## Project Structure
 
-- [`backend`](/Users/john/Documents/projects/threadgpt/backend): Go API, auth, chat/thread handling, storage integration
-- [`frontend`](/Users/john/Documents/projects/threadgpt/frontend): Next.js app and UI
-- [`migrations/20260403_1410_initial_schema.sql`](/Users/john/Documents/projects/threadgpt/migrations/20260403_1410_initial_schema.sql): Supabase schema
-- [`scripts/restart.sh`](/Users/john/Documents/projects/threadgpt/scripts/restart.sh): local restart helper
+- [`backend`](https://github.com/mrhakimov/threadgpt/tree/main/backend): Go API, auth, chat/thread handling, storage integration
+- [`frontend`](https://github.com/mrhakimov/threadgpt/tree/main/frontend): Next.js app and UI
+- [`migrations/20260403_1410_initial_schema.sql`](https://github.com/mrhakimov/threadgpt/blob/main/migrations/20260403_1410_initial_schema.sql): Supabase schema
+- [`scripts/restart.sh`](https://github.com/mrhakimov/threadgpt/blob/main/scripts/restart.sh): local restart helper
 
 ## Roadmap Direction
 
