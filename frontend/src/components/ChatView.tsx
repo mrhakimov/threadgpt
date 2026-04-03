@@ -139,7 +139,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
   }, [])
 
   const isEmpty = messages.length === 0 && !streamingContent
-  const isFirstMessage = isFirstMessageSession(session)
+  const isFirstMessage = !loading && isFirstMessageSession(session)
   const subtitle =
     overrideName ??
     (session?.name && session.name !== "New conversation"

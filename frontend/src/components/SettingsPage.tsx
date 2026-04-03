@@ -133,7 +133,7 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
             </div>
             <div className="py-3">
               <p className="text-xs text-muted-foreground">
-                Encrypted in server memory only — never written to disk or stored in the database.
+                Encrypted server-side for your session. Depending on server configuration, encrypted session data may also be persisted locally to survive restarts. Your raw API key is never stored in the database.
               </p>
             </div>
           </section>

@@ -93,7 +93,7 @@ export default function ApiKeyGate({ onSubmit }: Props) {
         <div className="flex flex-col gap-3">
           <div className="border-t border-border" />
           <p className="text-xs text-muted-foreground">
-            Your key is held in server memory for your session only — never written to disk or stored in the database.
+            Your key is encrypted server-side for your session. Depending on how this server is configured, encrypted session data may also be persisted locally to survive restarts. Your raw API key is never stored in the database.
           </p>
         </div>
 

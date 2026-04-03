@@ -16,3 +16,4 @@
 - Export thread + export all threads (all data)
 - Keyboard shortcuts
 - file upload
+- add markdown support

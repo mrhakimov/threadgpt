@@ -14,7 +14,6 @@ kill_listener() {
 
 echo "Stopping backend and frontend..."
 kill_listener 8000
-kill_listener 3001
 kill_listener 3000
 pkill -f "$PROJECT_ROOT/backend" 2>/dev/null
 pkill -f "$PROJECT_ROOT/frontend/node_modules/.bin/next" 2>/dev/null
@@ -31,7 +30,7 @@ sleep 2
 
 echo "Starting frontend..."
 cd "$PROJECT_ROOT/frontend"
-npm run dev -- --port 3001 &
+npm run dev -- --port 3000 &
 FRONTEND_PID=$!
 echo "Frontend started (PID $FRONTEND_PID)"
 
