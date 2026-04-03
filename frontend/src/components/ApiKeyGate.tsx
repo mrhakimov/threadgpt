@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { API_URL } from "@/lib/api"
@@ -48,55 +47,79 @@ export default function ApiKeyGate({ onSubmit }: Props) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
-      {isInsecureContext && (
-        <div className="w-full max-w-md mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <strong>Warning:</strong> This page is loaded over HTTP. Your API key will be transmitted unencrypted. Use HTTPS in production.
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm flex flex-col gap-8">
+
+        {/* Wordmark */}
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">ThreadGPT</h1>
+          <p className="text-sm text-muted-foreground">
+            Each message gets its own isolated context — no bloat, ever.
+          </p>
         </div>
-      )}
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>ThreadGPT</CardTitle>
-          <CardDescription>
-            Enter your OpenAI API key to start chatting. Your key is sent to the server over your connection, encrypted in server memory for your session, and never written to disk or stored in the database.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          {isInsecureContext && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <strong>Warning:</strong> This page is loaded over HTTP. Your API key will be transmitted unencrypted.
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+              OpenAI API Key
+            </label>
             <Input
               type="password"
               placeholder="sk-..."
               value={value}
               onChange={(e) => setValue(e.target.value)}
               autoFocus
+              className="font-mono text-sm border-0 border-b rounded-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
             />
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <Button type="submit" disabled={!value.trim() || loading}>
-              {loading ? "Connecting..." : "Continue"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Built by{" "}
-        <a
-          href="https://x.com/omtiness"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline hover:text-foreground transition-colors"
-        >
-          @omtiness
-        </a>
-        {" · "}
-        <a
-          href="https://github.com/mrhakimov/threadgpt"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline hover:text-foreground transition-colors"
-        >
-          GitHub
-        </a>
-      </p>
+          </div>
+
+          {error && (
+            <p className="text-xs text-destructive">{error}</p>
+          )}
+
+          <Button type="submit" disabled={!value.trim() || loading} className="w-full">
+            {loading ? "Connecting..." : "Continue"}
+          </Button>
+        </form>
+
+        {/* Privacy note */}
+        <div className="flex flex-col gap-3">
+          <div className="border-t border-border" />
+          <p className="text-xs text-muted-foreground">
+            Your key is held in server memory for your session only — never written to disk or stored in the database.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <p className="text-xs text-muted-foreground">
+          Built by{" "}
+          <a
+            href="https://x.com/omtiness"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-foreground transition-colors"
+          >
+            @omtiness
+          </a>
+          {" · "}
+          <a
+            href="https://github.com/mrhakimov/threadgpt"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-foreground transition-colors"
+          >
+            GitHub
+          </a>
+        </p>
+
+      </div>
     </div>
   )
 }
