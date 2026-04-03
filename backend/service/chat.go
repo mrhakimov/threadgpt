@@ -49,23 +49,27 @@ func (s *ChatService) Handle(ctx context.Context, req ChatRequest, stream reposi
 		return s.handleInitialMessage(ctx, req, session, stream)
 	}
 
-	threadID, err := s.assistant.CreateThread(ctx, req.APIKey)
+	// Keep the assistant turn running long enough to persist it even if the
+	// browser closes the SSE request mid-response.
+	opCtx := context.WithoutCancel(ctx)
+
+	threadID, err := s.assistant.CreateThread(opCtx, req.APIKey)
 	if err != nil {
 		return err
 	}
-	if err := s.assistant.AddUserMessage(ctx, req.APIKey, threadID, req.UserMessage); err != nil {
+	if err := s.assistant.AddUserMessage(opCtx, req.APIKey, threadID, req.UserMessage); err != nil {
 		return err
 	}
-	if _, err := s.messages.Save(ctx, session.ID, "user", req.UserMessage, &threadID, nil); err != nil {
+	if _, err := s.messages.Save(opCtx, session.ID, "user", req.UserMessage, &threadID, nil); err != nil {
 		return err
 	}
 	if err := stream.Start(session.ID); err != nil {
 		return err
 	}
 
-	assistantText, err := s.assistant.RunAndStream(ctx, req.APIKey, threadID, *session.AssistantID, stream)
+	assistantText, err := s.assistant.RunAndStream(opCtx, req.APIKey, threadID, *session.AssistantID, stream)
 	if assistantText != "" {
-		if _, saveErr := s.messages.Save(ctx, session.ID, "assistant", assistantText, &threadID, nil); saveErr != nil {
+		if _, saveErr := s.messages.Save(opCtx, session.ID, "assistant", assistantText, &threadID, nil); saveErr != nil {
 			return saveErr
 		}
 	}

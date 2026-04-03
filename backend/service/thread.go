@@ -47,22 +47,26 @@ func (s *ThreadService) Reply(ctx context.Context, req ThreadRequest, stream rep
 		return domain.ErrForbidden
 	}
 
-	threadID, err := s.messages.GetBranchThreadID(ctx, req.ParentMessageID)
+	// Closing a subthread drawer aborts the client request, but we still want
+	// the branch reply to finish and be saved so later refreshes stay consistent.
+	opCtx := context.WithoutCancel(ctx)
+
+	threadID, err := s.messages.GetBranchThreadID(opCtx, req.ParentMessageID)
 	if err != nil {
 		return err
 	}
 
-	resolvedThreadID, err := s.resolveThread(ctx, req.APIKey, parentMessage, threadID)
+	resolvedThreadID, err := s.resolveThread(opCtx, req.APIKey, parentMessage, threadID)
 	if err != nil {
 		return err
 	}
 
-	if err := s.assistant.AddUserMessage(ctx, req.APIKey, resolvedThreadID, req.UserMessage); err != nil {
+	if err := s.assistant.AddUserMessage(opCtx, req.APIKey, resolvedThreadID, req.UserMessage); err != nil {
 		return err
 	}
 
 	parentID := req.ParentMessageID
-	if _, err := s.messages.Save(ctx, session.ID, "user", req.UserMessage, &resolvedThreadID, &parentID); err != nil {
+	if _, err := s.messages.Save(opCtx, session.ID, "user", req.UserMessage, &resolvedThreadID, &parentID); err != nil {
 		return err
 	}
 
@@ -70,9 +74,9 @@ func (s *ThreadService) Reply(ctx context.Context, req ThreadRequest, stream rep
 		return err
 	}
 
-	assistantText, err := s.assistant.RunAndStream(ctx, req.APIKey, resolvedThreadID, *session.AssistantID, stream)
+	assistantText, err := s.assistant.RunAndStream(opCtx, req.APIKey, resolvedThreadID, *session.AssistantID, stream)
 	if assistantText != "" {
-		if _, saveErr := s.messages.Save(ctx, session.ID, "assistant", assistantText, &resolvedThreadID, &parentID); saveErr != nil {
+		if _, saveErr := s.messages.Save(opCtx, session.ID, "assistant", assistantText, &resolvedThreadID, &parentID); saveErr != nil {
 			return saveErr
 		}
 	}

@@ -2,7 +2,20 @@
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+kill_listener() {
+  local port="$1"
+  local pids
+
+  pids="$(lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    echo "$pids" | xargs kill
+  fi
+}
+
 echo "Stopping backend and frontend..."
+kill_listener 8000
+kill_listener 3001
+kill_listener 3000
 pkill -f "$PROJECT_ROOT/backend" 2>/dev/null
 pkill -f "$PROJECT_ROOT/frontend/node_modules/.bin/next" 2>/dev/null
 pkill -f "npm run dev" 2>/dev/null

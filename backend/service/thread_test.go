@@ -117,6 +117,75 @@ func TestThreadServiceReply_UsesStoredBranchThreadID(t *testing.T) {
 	}
 }
 
+func TestThreadServiceReply_ContinuesAfterClientDisconnect(t *testing.T) {
+	assistantID := "assistant-1"
+	rootID := "root-user"
+	parentID := "parent-assistant"
+
+	sessionRepo := &stubSessionRepository{
+		session: &domain.Session{
+			ID:          "session-1",
+			APIKeyHash:  "hash-1",
+			AssistantID: &assistantID,
+		},
+	}
+	messageRepo := &stubMessageRepository{
+		messagesByID: map[string]*domain.Message{
+			rootID: {
+				ID:        rootID,
+				SessionID: "session-1",
+				Role:      "user",
+				Content:   "Original question",
+			},
+			parentID: {
+				ID:              parentID,
+				SessionID:       "session-1",
+				Role:            "assistant",
+				Content:         "Original answer",
+				ParentMessageID: &rootID,
+			},
+		},
+	}
+	assistant := &stubAssistantClient{
+		createThreadID: "branch-thread-1",
+		runAndStreamFunc: func(ctx context.Context, _ string, threadID, assistantID string, _ repository.StreamWriter) (string, error) {
+			if err := ctx.Err(); err != nil {
+				t.Fatalf("expected detached context during stream, got %v", err)
+			}
+			if threadID != "branch-thread-1" {
+				t.Fatalf("unexpected thread id: %q", threadID)
+			}
+			if assistantID != "assistant-1" {
+				t.Fatalf("unexpected assistant id: %q", assistantID)
+			}
+			return "Saved after disconnect", nil
+		},
+	}
+
+	service := NewThreadService(sessionRepo, messageRepo, assistant)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	err := service.Reply(ctx, ThreadRequest{
+		APIKey:          "sk-test",
+		APIKeyHash:      "hash-1",
+		ParentMessageID: parentID,
+		UserMessage:     "Follow-up question",
+	}, &cancelOnStartStreamWriter{cancel: cancel})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(messageRepo.savedMessages) != 2 {
+		t.Fatalf("expected user and assistant messages to be saved, got %d", len(messageRepo.savedMessages))
+	}
+	if messageRepo.savedMessages[0].Role != "user" || messageRepo.savedMessages[0].Content != "Follow-up question" {
+		t.Fatalf("unexpected saved user message: %+v", messageRepo.savedMessages[0])
+	}
+	if messageRepo.savedMessages[1].Role != "assistant" || messageRepo.savedMessages[1].Content != "Saved after disconnect" {
+		t.Fatalf("unexpected saved assistant message: %+v", messageRepo.savedMessages[1])
+	}
+}
+
 type stubSessionRepository struct {
 	session             *domain.Session
 	systemPromptUpdates int
@@ -233,6 +302,7 @@ type stubAssistantClient struct {
 	addedMessages       []assistantMessageCall
 	updatedInstructions string
 	runAndStreamText    string
+	runAndStreamFunc    func(context.Context, string, string, string, repository.StreamWriter) (string, error)
 }
 
 type assistantMessageCall struct {
@@ -260,7 +330,10 @@ func (a *stubAssistantClient) AddAssistantMessage(_ context.Context, _ string, t
 	return nil
 }
 
-func (a *stubAssistantClient) RunAndStream(context.Context, string, string, string, repository.StreamWriter) (string, error) {
+func (a *stubAssistantClient) RunAndStream(ctx context.Context, apiKey, threadID, assistantID string, stream repository.StreamWriter) (string, error) {
+	if a.runAndStreamFunc != nil {
+		return a.runAndStreamFunc(ctx, apiKey, threadID, assistantID, stream)
+	}
 	return a.runAndStreamText, nil
 }
 
@@ -274,6 +347,20 @@ type stubStreamWriter struct{}
 func (s *stubStreamWriter) Start(string) error      { return nil }
 func (s *stubStreamWriter) WriteChunk(string) error { return nil }
 func (s *stubStreamWriter) Close() error            { return nil }
+
+type cancelOnStartStreamWriter struct {
+	cancel func()
+}
+
+func (s *cancelOnStartStreamWriter) Start(string) error {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	return nil
+}
+
+func (s *cancelOnStartStreamWriter) WriteChunk(string) error { return nil }
+func (s *cancelOnStartStreamWriter) Close() error            { return nil }
 
 func stringPtr(value string) *string {
 	return &value
