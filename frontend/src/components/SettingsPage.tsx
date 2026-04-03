@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { logout } from "@/lib/api"
+import { logoutUser } from "@/services/authService"
 import { cn } from "@/lib/utils"
 import type { Theme } from "@/hooks/useTheme"
 
@@ -25,7 +25,7 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
   const [confirming, setConfirming] = useState(false)
 
   async function handleLogout() {
-    await logout()
+    await logoutUser()
     onLogout()
   }
 

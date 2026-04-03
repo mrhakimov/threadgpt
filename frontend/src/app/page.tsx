@@ -3,9 +3,11 @@
 import { useState, useEffect } from "react"
 import ApiKeyGate from "@/components/ApiKeyGate"
 import ChatView from "@/components/ChatView"
-import { auth, checkAuth } from "@/lib/api"
-
-const SESSION_KEY = "threadgpt_session_id"
+import {
+  authenticateWithApiKey,
+  checkAuthorization,
+} from "@/services/authService"
+import { storageService } from "@/services/storageService"
 
 export default function Home() {
   const [loggedIn, setLoggedIn] = useState(false)
@@ -13,19 +15,18 @@ export default function Home() {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    checkAuth().then((ok) => {
+    checkAuthorization().then((ok) => {
       setLoggedIn(ok)
-      const storedSession = sessionStorage.getItem(SESSION_KEY)
       // undefined = auto-detect latest; null = blank new; string = specific session
       // If nothing stored, use undefined so useChat auto-detects the latest session
-      setSessionId(storedSession ?? null)
+      setSessionId(storageService.getSelectedSessionId() ?? null)
       setMounted(true)
     })
   }, [])
 
   async function handleApiKey(key: string) {
-    await auth(key)
-    sessionStorage.removeItem(SESSION_KEY)
+    await authenticateWithApiKey(key)
+    storageService.setSelectedSessionId(null)
     setSessionId(null)
     setLoggedIn(true)
   }
@@ -33,11 +34,7 @@ export default function Home() {
   function handleSelectSession(id: string | null) {
     // null = blank new conversation (clear storage); string = specific session
     setSessionId(id)
-    if (id) {
-      sessionStorage.setItem(SESSION_KEY, id)
-    } else {
-      sessionStorage.removeItem(SESSION_KEY)
-    }
+    storageService.setSelectedSessionId(id)
   }
 
   function handleUnauthorized() {

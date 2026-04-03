@@ -7,6 +7,7 @@ import (
 )
 
 const defaultMessagesLimit = 10
+const maxPaginationOffset = 10000
 
 type MessageDTO struct {
 	ID              string  `json:"id"`
@@ -24,6 +25,10 @@ type messagesResponse struct {
 }
 
 func HandleHistory(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleHistory(w, r)
+}
+
+func (a *Application) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -35,8 +40,8 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, offset := parsePaginationParams(r, defaultMessagesLimit)
-	messages, err := app().history.Get(r.Context(), APIKeyHashFromContext(r.Context()), sessionID, limit, offset)
+	limit, offset := parsePaginationParams(r, defaultMessagesLimit, maxPaginationOffset)
+	messages, err := a.history.Get(r.Context(), APIKeyHashFromContext(r.Context()), sessionID, limit, offset)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -48,7 +53,7 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func parsePaginationParams(r *http.Request, defaultLimit int) (limit, offset int) {
+func parsePaginationParams(r *http.Request, defaultLimit, maxOffset int) (limit, offset int) {
 	limit = defaultLimit
 	if value := r.URL.Query().Get("limit"); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 && parsed <= 100 {
@@ -56,7 +61,7 @@ func parsePaginationParams(r *http.Request, defaultLimit int) (limit, offset int
 		}
 	}
 	if value := r.URL.Query().Get("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 && parsed <= 10000 {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 && parsed <= maxOffset {
 			offset = parsed
 		}
 	}

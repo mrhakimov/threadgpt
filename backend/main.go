@@ -10,10 +10,17 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"threadgpt/data"
 	"threadgpt/handlers"
+	"threadgpt/service"
 
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/hkdf"
+)
+
+const (
+	defaultAllowedOrigin = "http://localhost:3000"
+	defaultPort          = "8000"
 )
 
 func securityHeaders(next http.HandlerFunc) http.HandlerFunc {
@@ -35,7 +42,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
 		if allowedOrigin == "" {
-			allowedOrigin = "http://localhost:3000"
+			allowedOrigin = defaultAllowedOrigin
 		}
 
 		w.Header().Set("Vary", "Origin")
@@ -62,11 +69,11 @@ func main() {
 	}
 
 	if os.Getenv("SUPABASE_URL") == "" || (os.Getenv("SUPABASE_SERVICE_KEY") == "" && os.Getenv("SUPABASE_SECRET_KEY") == "") {
-		log.Fatal("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+		log.Fatal("SUPABASE_URL and either SUPABASE_SERVICE_KEY or SUPABASE_SECRET_KEY must be set")
 	}
 
 	if os.Getenv("ALLOWED_ORIGIN") == "" {
-		log.Println("WARNING: ALLOWED_ORIGIN not set; defaulting to http://localhost:3000 — set this in production")
+		log.Printf("WARNING: ALLOWED_ORIGIN not set; defaulting to %s; set this in production", defaultAllowedOrigin)
 	}
 
 	// Load or generate TOKEN_ENCRYPTION_KEY (32 bytes / 64 hex chars).
@@ -84,12 +91,24 @@ func main() {
 			log.Fatal("failed to generate encryption key:", err)
 		}
 	}
-	handlers.SetEncryptionKey(encKey)
+
+	store := data.NewSupabaseStore()
+	assistant := data.NewOpenAIClient()
+	auth := service.NewAuthService()
+	app := handlers.NewApplication(handlers.Dependencies{
+		Auth:     auth,
+		Chat:     service.NewChatService(store, store, assistant),
+		History:  service.NewHistoryService(store, store),
+		Sessions: service.NewSessionService(store, store, assistant),
+		Threads:  service.NewThreadService(store, store, assistant),
+	})
+
+	app.SetEncryptionKey(encKey)
 
 	// Persist tokens to disk so they survive restarts.
 	// Only useful when TOKEN_ENCRYPTION_KEY is stable (set in .env).
 	if os.Getenv("TOKEN_ENCRYPTION_KEY") != "" {
-		handlers.SetTokenStorePath(".token_store.json")
+		app.SetTokenStorePath(".token_store.json")
 	}
 
 	// Derive a separate HMAC key for API key hashing via HKDF-SHA256.
@@ -98,32 +117,36 @@ func main() {
 	if _, err := io.ReadFull(hkdfReader, hashKey); err != nil {
 		log.Fatal("failed to derive hash key:", err)
 	}
-	handlers.SetHashKey(hashKey)
+	app.SetHashKey(hashKey)
 
 	// Configure token store size (default 1000, override via MAX_TOKEN_STORE_SIZE).
 	if v := os.Getenv("MAX_TOKEN_STORE_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			handlers.SetMaxTokenStoreSize(n)
+			app.SetMaxTokenStoreSize(n)
 		}
 	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8000"
+		port = defaultPort
 	}
 
-	go handlers.PurgeExpiredTokens()
+	go app.PurgeExpiredTokens()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/auth", securityHeaders(corsMiddleware(handlers.HandleAuth)))
-	mux.HandleFunc("/api/auth/check", securityHeaders(corsMiddleware(handlers.HandleAuthCheck)))
-	mux.HandleFunc("/api/auth/logout", securityHeaders(corsMiddleware(handlers.HandleLogout)))
-	mux.HandleFunc("/api/session", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSession))))
-	mux.HandleFunc("/api/sessions", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSessions))))
-	mux.HandleFunc("/api/sessions/", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleSessionByID))))
-	mux.HandleFunc("/api/history", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleHistory))))
-	mux.HandleFunc("/api/chat", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleChat))))
-	mux.HandleFunc("/api/thread", securityHeaders(corsMiddleware(handlers.RequireAuth(handlers.HandleThread))))
+	handle := func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, securityHeaders(corsMiddleware(handler)))
+	}
+
+	handle("/api/auth", app.HandleAuth)
+	handle("/api/auth/check", app.HandleAuthCheck)
+	handle("/api/auth/logout", app.HandleLogout)
+	handle("/api/session", app.RequireAuth(app.HandleSession))
+	handle("/api/sessions", app.RequireAuth(app.HandleSessions))
+	handle("/api/sessions/", app.RequireAuth(app.HandleSessionByID))
+	handle("/api/history", app.RequireAuth(app.HandleHistory))
+	handle("/api/chat", app.RequireAuth(app.HandleChat))
+	handle("/api/thread", app.RequireAuth(app.HandleThread))
 
 	fmt.Printf("ThreadGPT backend listening on :%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, mux))

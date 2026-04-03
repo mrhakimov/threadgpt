@@ -1,1 +1,1 @@
-export const MIN_LOADING_MS = 400
+export { MIN_LOADING_MS } from "@/domain/constants"

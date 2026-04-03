@@ -7,21 +7,22 @@ import { useThread } from "@/hooks/useThread"
 import MessageList from "./MessageList"
 import ChatInput from "./ChatInput"
 import { Button } from "@/components/ui/button"
-import { X, Loader2 } from "lucide-react"
+import { X } from "lucide-react"
 import { MIN_LOADING_MS } from "@/lib/constants"
+import LoadingSpinner from "@/components/shared/LoadingSpinner"
 
 interface Props {
   parentMessage: Message
   onClose: () => void
   onReply?: (parentMessageId: string) => void
-  container?: HTMLElement | null
   onAbortRef?: (abortFn: (() => void) | null) => void
 }
 
 const DURATION = 300
 const SLIDE_IN_MS = 300
+const LOAD_MORE_TOP_THRESHOLD = 200
 
-export default function ThreadDrawer({ parentMessage, onClose, onReply, container, onAbortRef }: Props) {
+export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortRef }: Props) {
   const { messages, hasMore, loadingMore, loading, sending, streamingContent, error, sendMessage, loadMore, abort } = useThread(
     parentMessage.id,
     onReply ? () => onReply(parentMessage.id) : undefined
@@ -29,20 +30,27 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
   const scrollRef = useRef<HTMLDivElement>(null)
   const [closing, setClosing] = useState(false)
   const [showLoading, setShowLoading] = useState(true)
+  const [canLoadMoreOnScroll, setCanLoadMoreOnScroll] = useState(false)
   const minLoadingDoneRef = useRef(false)
   const dataLoadedRef = useRef(false)
+  const minLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // After drawer opens, show spinner for MIN_LOADING_MS, then hide if data is also ready
   useEffect(() => {
     const openTimer = setTimeout(() => {
       setShowLoading(true)
-      const minTimer = setTimeout(() => {
+      minLoadingTimerRef.current = setTimeout(() => {
         minLoadingDoneRef.current = true
         if (dataLoadedRef.current) setShowLoading(false)
       }, MIN_LOADING_MS)
-      return () => clearTimeout(minTimer)
     }, SLIDE_IN_MS)
-    return () => clearTimeout(openTimer)
+
+    return () => {
+      clearTimeout(openTimer)
+      if (minLoadingTimerRef.current) {
+        clearTimeout(minLoadingTimerRef.current)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -52,16 +60,20 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
     }
   }, [loading])
 
-  function handleClose() {
+  useEffect(() => {
+    setCanLoadMoreOnScroll(false)
+  }, [parentMessage.id])
+
+  const handleClose = useCallback(() => {
     setClosing(true)
     setTimeout(onClose, DURATION)
-  }
+  }, [onClose])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    if (el.scrollTop === 0 && hasMore && !loadingMore) loadMore(el)
-  }, [hasMore, loadingMore, loadMore])
+    if (canLoadMoreOnScroll && el.scrollTop <= LOAD_MORE_TOP_THRESHOLD && hasMore && !loadingMore) loadMore(el)
+  }, [canLoadMoreOnScroll, hasMore, loadingMore, loadMore])
 
   useEffect(() => {
     onAbortRef?.(abort)
@@ -74,7 +86,7 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [])
+  }, [handleClose])
 
   const drawerAnim = closing
     ? "drawer-out 300ms ease-in-out forwards"
@@ -121,8 +133,8 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
 
           <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4">
             {showLoading ? (
-              <div className="flex justify-center mt-8">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <div className="flex h-full items-center justify-center">
+                <LoadingSpinner className="h-5 w-5" />
               </div>
             ) : (
               <>
@@ -131,7 +143,7 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, containe
                     Ask a follow-up question below.
                   </p>
                 )}
-                <MessageList messages={messages} streamingContent={streamingContent} sending={sending} scrollRef={scrollRef} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={loadMore} />
+                <MessageList messages={messages} streamingContent={streamingContent} sending={sending} scrollRef={scrollRef} scrollContextKey={parentMessage.id} onInitialScrollComplete={() => setCanLoadMoreOnScroll(true)} hasMore={hasMore} loadingMore={loadingMore} onLoadMore={loadMore} />
               </>
             )}
           </div>

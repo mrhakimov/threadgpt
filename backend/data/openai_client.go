@@ -17,12 +17,14 @@ import (
 const openAIBaseURL = "https://api.openai.com/v1"
 
 type OpenAIClient struct {
-	client *http.Client
+	client       *http.Client
+	streamClient *http.Client
 }
 
 func NewOpenAIClient() *OpenAIClient {
 	return &OpenAIClient{
-		client: &http.Client{Timeout: 30 * time.Second},
+		client:       &http.Client{Timeout: 30 * time.Second},
+		streamClient: &http.Client{},
 	}
 }
 
@@ -83,7 +85,7 @@ func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, threadID, assis
 	req.Header.Set("OpenAI-Beta", "assistants=v2")
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := c.streamClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -96,6 +98,7 @@ func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, threadID, assis
 
 	var fullText strings.Builder
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {

@@ -12,8 +12,12 @@ type ThreadRequest struct {
 }
 
 func HandleThread(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleThread(w, r)
+}
+
+func (a *Application) HandleThread(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		handleGetThread(w, r)
+		a.handleGetThread(w, r)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -37,12 +41,12 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	apiKeyHash := APIKeyHashFromContext(r.Context())
-	if !app().auth.AllowChat("chat:" + apiKeyHash) {
+	if !a.auth.AllowChat("chat:" + apiKeyHash) {
 		writeServiceError(w, domain.ErrRateLimited)
 		return
 	}
 
-	err := app().threads.Reply(r.Context(), service.ThreadRequest{
+	err := a.threads.Reply(r.Context(), service.ThreadRequest{
 		APIKey:          APIKeyFromContext(r.Context()),
 		APIKeyHash:      apiKeyHash,
 		ParentMessageID: req.ParentMessageID,
@@ -53,7 +57,7 @@ func HandleThread(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleGetThread(w http.ResponseWriter, r *http.Request) {
+func (a *Application) handleGetThread(w http.ResponseWriter, r *http.Request) {
 	parentMessageID := r.URL.Query().Get("parent_message_id")
 	if parentMessageID == "" {
 		http.Error(w, "missing parent_message_id", http.StatusBadRequest)
@@ -64,8 +68,8 @@ func handleGetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, offset := parsePaginationParams(r, defaultMessagesLimit)
-	messages, err := app().threads.Get(r.Context(), APIKeyHashFromContext(r.Context()), parentMessageID, limit, offset)
+	limit, offset := parsePaginationParams(r, defaultMessagesLimit, maxPaginationOffset)
+	messages, err := a.threads.Get(r.Context(), APIKeyHashFromContext(r.Context()), parentMessageID, limit, offset)
 	if err != nil {
 		writeServiceError(w, err)
 		return

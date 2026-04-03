@@ -1,23 +1,20 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { Theme } from "@/domain/theme"
+import {
+  applyTheme,
+  getStoredTheme,
+  resolveTheme,
+  setStoredTheme,
+} from "@/services/themeService"
 
-export type Theme = "system" | "light" | "dark"
-
-function resolveTheme(theme: Theme): boolean {
-  if (theme === "dark") return true
-  if (theme === "light") return false
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-}
-
-function applyTheme(isDark: boolean) {
-  document.documentElement.classList.toggle("dark", isDark)
-}
+export type { Theme } from "@/domain/theme"
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === "undefined") return "system"
-    return (localStorage.getItem("theme") as Theme) ?? "system"
+    return getStoredTheme()
   })
 
   const [isDark, setIsDark] = useState(false)
@@ -41,7 +38,7 @@ export function useTheme() {
   }, [theme])
 
   function setTheme(next: Theme) {
-    localStorage.setItem("theme", next)
+    setStoredTheme(next)
     setThemeState(next)
   }
 

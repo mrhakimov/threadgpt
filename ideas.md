@@ -11,3 +11,6 @@
 - support anthropic
 - add model selection to the thread view
 - dark mode
+- Prompt versioning
+- Share a thread
+- Export

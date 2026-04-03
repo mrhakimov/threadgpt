@@ -16,33 +16,57 @@ const (
 )
 
 func SetEncryptionKey(key []byte) {
-	app().auth.SetEncryptionKey(key)
+	currentApp().SetEncryptionKey(key)
 }
 
 func SetHashKey(key []byte) {
-	app().auth.SetHashKey(key)
+	currentApp().SetHashKey(key)
 }
 
 func SetTokenStorePath(path string) {
-	app().auth.SetTokenStorePath(path)
+	currentApp().SetTokenStorePath(path)
 }
 
 func SetMaxTokenStoreSize(n int) {
-	app().auth.SetMaxTokenStoreSize(n)
+	currentApp().SetMaxTokenStoreSize(n)
 }
 
 func PurgeExpiredTokens() {
-	app().auth.PurgeExpiredTokens()
+	currentApp().PurgeExpiredTokens()
+}
+
+func (a *Application) SetEncryptionKey(key []byte) {
+	a.auth.SetEncryptionKey(key)
+}
+
+func (a *Application) SetHashKey(key []byte) {
+	a.auth.SetHashKey(key)
+}
+
+func (a *Application) SetTokenStorePath(path string) {
+	a.auth.SetTokenStorePath(path)
+}
+
+func (a *Application) SetMaxTokenStoreSize(n int) {
+	a.auth.SetMaxTokenStoreSize(n)
+}
+
+func (a *Application) PurgeExpiredTokens() {
+	a.auth.PurgeExpiredTokens()
 }
 
 func HandleAuth(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleAuth(w, r)
+}
+
+func (a *Application) HandleAuth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	ip := remoteIP(r)
-	if !app().auth.AllowAuth(ip) {
+	if !a.auth.AllowAuth(ip) {
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
@@ -60,7 +84,7 @@ func HandleAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := app().auth.Login(req.APIKey)
+	token, err := a.auth.Login(req.APIKey)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -83,13 +107,17 @@ func HandleAuth(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleAuthCheck(w, r)
+}
+
+func (a *Application) HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	ip := remoteIP(r)
-	if !app().auth.AllowChat(ip) {
+	if !a.auth.AllowChat(ip) {
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
@@ -99,7 +127,7 @@ func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if err := app().auth.Check(cookie.Value); err != nil {
+	if err := a.auth.Check(cookie.Value); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -109,19 +137,23 @@ func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleLogout(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleLogout(w, r)
+}
+
+func (a *Application) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	ip := remoteIP(r)
-	if !app().auth.AllowChat(ip) {
+	if !a.auth.AllowChat(ip) {
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
 
 	if cookie, err := r.Cookie("threadgpt_token"); err == nil {
-		app().auth.Logout(cookie.Value)
+		a.auth.Logout(cookie.Value)
 	}
 
 	http.SetCookie(w, &http.Cookie{Name: "threadgpt_token", Value: "", Path: "/", MaxAge: -1})
@@ -130,6 +162,10 @@ func HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return currentApp().RequireAuth(next)
+}
+
+func (a *Application) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("threadgpt_token")
 		if err != nil {
@@ -137,7 +173,7 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		authContext, err := app().auth.Authorize(cookie.Value)
+		authContext, err := a.auth.Authorize(cookie.Value)
 		if err != nil {
 			writeServiceError(w, err)
 			return

@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"log"
 	"os"
 	"sync"
 	"threadgpt/domain"
@@ -52,11 +54,11 @@ func NewAuthService() *AuthService {
 }
 
 func (s *AuthService) SetEncryptionKey(key []byte) {
-	s.encryptionKey = key
+	s.encryptionKey = append([]byte(nil), key...)
 }
 
 func (s *AuthService) SetHashKey(key []byte) {
-	s.hashKey = key
+	s.hashKey = append([]byte(nil), key...)
 }
 
 func (s *AuthService) SetTokenStorePath(path string) {
@@ -222,6 +224,9 @@ func (s *AuthService) decryptAPIKey(encrypted string) (string, error) {
 		return "", err
 	}
 	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", errors.New("ciphertext too short")
+	}
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
@@ -236,11 +241,15 @@ func (s *AuthService) loadTokenStore() {
 	}
 	data, err := os.ReadFile(s.tokenStorePath)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("auth token store: failed to read %s: %v", s.tokenStorePath, err)
+		}
 		return
 	}
 
 	var persisted map[string]tokenEntry
 	if err := json.Unmarshal(data, &persisted); err != nil {
+		log.Printf("auth token store: failed to decode %s: %v", s.tokenStorePath, err)
 		return
 	}
 
@@ -268,7 +277,10 @@ func (s *AuthService) saveTokenStore() {
 
 	data, err := json.Marshal(persisted)
 	if err != nil {
+		log.Printf("auth token store: failed to encode %s: %v", s.tokenStorePath, err)
 		return
 	}
-	_ = os.WriteFile(s.tokenStorePath, data, 0600)
+	if err := os.WriteFile(s.tokenStorePath, data, 0600); err != nil {
+		log.Printf("auth token store: failed to write %s: %v", s.tokenStorePath, err)
+	}
 }

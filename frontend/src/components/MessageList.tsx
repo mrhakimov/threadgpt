@@ -3,7 +3,7 @@
 import { useEffect, useRef, RefObject } from "react"
 import { Message } from "@/types"
 import MessageBubble from "./MessageBubble"
-import { Loader2 } from "lucide-react"
+import LoadingSpinner from "@/components/shared/LoadingSpinner"
 
 interface Props {
   messages: Message[]
@@ -12,46 +12,92 @@ interface Props {
   onReply?: (message: Message) => void
   onEditSystemPrompt?: (newContent: string) => Promise<void>
   scrollRef?: RefObject<HTMLDivElement | null>
+  scrollContextKey?: string
+  onInitialScrollComplete?: () => void
   showSystemPrompt?: boolean
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
 }
 
-export default function MessageList({ messages, streamingContent, sending, onReply, onEditSystemPrompt, scrollRef, showSystemPrompt, hasMore, loadingMore, onLoadMore }: Props) {
+export default function MessageList({ messages, streamingContent, sending, onReply, onEditSystemPrompt, scrollRef, scrollContextKey, onInitialScrollComplete, showSystemPrompt, hasMore, loadingMore, onLoadMore }: Props) {
   const didInitialScroll = useRef(false)
   const firstMessageIdRef = useRef<string | undefined>(undefined)
+  const lastMessageIdRef = useRef<string | undefined>(undefined)
+  const messageCountRef = useRef(0)
+  const streamingContentRef = useRef<string | undefined>(undefined)
+
+  void onLoadMore
+
+  useEffect(() => {
+    didInitialScroll.current = false
+    firstMessageIdRef.current = undefined
+    lastMessageIdRef.current = undefined
+    messageCountRef.current = 0
+    streamingContentRef.current = undefined
+  }, [scrollContextKey])
 
   useEffect(() => {
     const el = scrollRef?.current
     if (!el) return
 
+    const prevFirstId = firstMessageIdRef.current
+    const prevLastId = lastMessageIdRef.current
+    const prevMessageCount = messageCountRef.current
+    const prevStreamingContent = streamingContentRef.current
+
     const firstId = messages[0]?.id
-    const wasPrepend = firstId !== firstMessageIdRef.current && firstMessageIdRef.current !== undefined && messages.length > 0
+    const lastId = messages[messages.length - 1]?.id
+    const wasPrepend =
+      prevFirstId !== undefined &&
+      firstId !== prevFirstId &&
+      lastId === prevLastId &&
+      messages.length > prevMessageCount
+    const tailChanged = prevLastId !== undefined && lastId !== prevLastId
+    const streamingChanged = streamingContent !== prevStreamingContent
+
     firstMessageIdRef.current = firstId
+    lastMessageIdRef.current = lastId
+    messageCountRef.current = messages.length
+    streamingContentRef.current = streamingContent
 
     // Don't auto-scroll to bottom when prepending older messages
     if (wasPrepend) return
 
     if (!didInitialScroll.current && messages.length > 0) {
-      // On initial load, use instant scroll after a brief delay to let layout settle
       didInitialScroll.current = true
-      let raf2: number
-      const raf = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => {
-          el.scrollTo({ top: el.scrollHeight, behavior: "instant" })
+      let raf1 = 0
+      let raf2 = 0
+
+      const settleAtBottom = () => {
+        el.scrollTop = el.scrollHeight
+        raf1 = requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight
+          raf2 = requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight
+            onInitialScrollComplete?.()
+          })
         })
-      })
-      return () => { cancelAnimationFrame(raf); cancelAnimationFrame(raf2) }
+      }
+
+      settleAtBottom()
+
+      return () => {
+        cancelAnimationFrame(raf1)
+        cancelAnimationFrame(raf2)
+      }
     }
+
+    if (!tailChanged && !streamingChanged) return
+
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-  }, [messages.length, streamingContent, scrollRef])
+  }, [messages, streamingContent, scrollRef, onInitialScrollComplete])
 
   return (
-    <div className="flex flex-col gap-4 py-4">
-      {(hasMore || loadingMore) && (
+    <div className="min-h-full flex flex-col justify-end gap-4 py-4">
+      {loadingMore && (
         <div className="flex justify-center py-2">
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <LoadingSpinner className="h-4 w-4" />
         </div>
       )}
 

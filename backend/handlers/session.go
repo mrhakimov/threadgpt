@@ -1,9 +1,6 @@
 package handlers
 
-import (
-	"net/http"
-	"strconv"
-)
+import "net/http"
 
 type SessionResponse struct {
 	SessionID    string  `json:"session_id"`
@@ -16,31 +13,24 @@ type SessionResponse struct {
 const defaultSessionsLimit = 20
 
 func HandleSessions(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleSessions(w, r)
+}
+
+func (a *Application) HandleSessions(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		handleListSessions(w, r)
+		a.handleListSessions(w, r)
 	case http.MethodPost:
-		handleCreateNamedSession(w, r)
+		a.handleCreateNamedSession(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func handleListSessions(w http.ResponseWriter, r *http.Request) {
-	limit := defaultSessionsLimit
-	offset := 0
-	if value := r.URL.Query().Get("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
-	}
-	if value := r.URL.Query().Get("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+func (a *Application) handleListSessions(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parsePaginationParams(r, defaultSessionsLimit, maxPaginationOffset)
 
-	sessions, err := app().sessions.List(r.Context(), APIKeyHashFromContext(r.Context()), limit, offset)
+	sessions, err := a.sessions.List(r.Context(), APIKeyHashFromContext(r.Context()), limit, offset)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -78,7 +68,7 @@ type CreateSessionRequest struct {
 	Name string `json:"name"`
 }
 
-func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
+func (a *Application) handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1*1024)
 	var req CreateSessionRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -95,7 +85,7 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := app().sessions.CreateNamed(r.Context(), APIKeyHashFromContext(r.Context()), name)
+	session, err := a.sessions.CreateNamed(r.Context(), APIKeyHashFromContext(r.Context()), name)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -109,6 +99,10 @@ func handleCreateNamedSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleSessionByID(w, r)
+}
+
+func (a *Application) HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Path[len("/api/sessions/"):]
 	if sessionID == "" {
 		http.Error(w, "session id required", http.StatusBadRequest)
@@ -123,7 +117,7 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		session, err := app().sessions.GetByID(r.Context(), apiKeyHash, sessionID)
+		session, err := a.sessions.GetByID(r.Context(), apiKeyHash, sessionID)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -158,14 +152,14 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := app().sessions.Update(r.Context(), APIKeyFromContext(r.Context()), apiKeyHash, sessionID, req.Name, req.SystemPrompt); err != nil {
+		if err := a.sessions.Update(r.Context(), APIKeyFromContext(r.Context()), apiKeyHash, sessionID, req.Name, req.SystemPrompt); err != nil {
 			writeServiceError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodDelete:
-		if err := app().sessions.Delete(r.Context(), apiKeyHash, sessionID); err != nil {
+		if err := a.sessions.Delete(r.Context(), apiKeyHash, sessionID); err != nil {
 			writeServiceError(w, err)
 			return
 		}
@@ -177,12 +171,16 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleSession(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleSession(w, r)
+}
+
+func (a *Application) HandleSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	session, err := app().sessions.GetCurrent(r.Context(), APIKeyHashFromContext(r.Context()))
+	session, err := a.sessions.GetCurrent(r.Context(), APIKeyHashFromContext(r.Context()))
 	if err != nil {
 		writeServiceError(w, err)
 		return

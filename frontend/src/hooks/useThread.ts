@@ -2,9 +2,13 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { Message } from "@/types"
-import { fetchThreadMessages, sendThreadMessage } from "@/lib/api"
-
-const PAGE_SIZE = 10
+import { createOptimisticUserMessage } from "@/domain/chat"
+import { toErrorMessage } from "@/domain/errors"
+import {
+  loadOlderThreadMessages,
+  loadThreadHistory,
+  streamThreadTurn,
+} from "@/services/threadService"
 
 export function useThread(parentMessageId: string, onReplySent?: () => void) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -15,7 +19,7 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
 
   useEffect(() => {
     setLoading(true)
-    fetchThreadMessages(parentMessageId, PAGE_SIZE, 0)
+    loadThreadHistory(parentMessageId)
       .then((data) => {
         setMessages(data.messages ?? [])
         setHasMore(data.has_more ?? false)
@@ -37,17 +41,24 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
     }
   }, [])
 
-  const loadMore = useCallback(async (scrollEl?: HTMLDivElement | null) => {
+  const loadMore = useCallback(async (
+    scrollEl?: HTMLDivElement | null,
+    options?: { anchor?: "preserve" | "bottom" },
+  ) => {
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
     const prevScrollHeight = scrollEl?.scrollHeight ?? 0
     try {
       // Backend returns desc reversed to asc. offset from newest end — older messages.
-      const data = await fetchThreadMessages(parentMessageId, PAGE_SIZE, messages.length)
+      const data = await loadOlderThreadMessages(parentMessageId, messages.length)
       setMessages((prev) => [...data.messages, ...prev])
       setHasMore(data.has_more)
       if (scrollEl) {
         requestAnimationFrame(() => {
+          if (options?.anchor === "bottom") {
+            scrollEl.scrollTop = scrollEl.scrollHeight
+            return
+          }
           scrollEl.scrollTop = scrollEl.scrollHeight - prevScrollHeight
         })
       }
@@ -66,31 +77,23 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
     const controller = new AbortController()
     abortRef.current = controller
 
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      session_id: "",
-      role: "user",
-      content,
-      created_at: new Date().toISOString(),
-    }
+    const userMsg: Message = createOptimisticUserMessage(content)
     setMessages((prev) => [...prev, userMsg])
     setStreamingContent("")
 
     let accumulated = ""
 
     try {
-      await sendThreadMessage(parentMessageId, content, (chunk) => {
+      await streamThreadTurn(parentMessageId, content, (chunk) => {
         accumulated += chunk
         setStreamingContent(accumulated)
       }, controller.signal)
 
       if (!activeRef.current || controller.signal.aborted) return
       const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        session_id: "",
+        ...createOptimisticUserMessage(""),
         role: "assistant",
         content: accumulated,
-        created_at: new Date().toISOString(),
       }
       setMessages((prev) => [...prev, assistantMsg])
       setStreamingContent("")
@@ -98,7 +101,7 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") return
       if (!activeRef.current) return
-      setError(String(e))
+      setError(toErrorMessage(e))
       setStreamingContent("")
     } finally {
       if (activeRef.current) setSending(false)

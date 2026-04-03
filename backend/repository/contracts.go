@@ -24,6 +24,7 @@ type MessageRepository interface {
 	GetMainDesc(ctx context.Context, sessionID string, limit, offset int) ([]domain.Message, error)
 	GetThreadAsc(ctx context.Context, parentMessageID string, limit, offset int) ([]domain.Message, error)
 	GetThreadDesc(ctx context.Context, parentMessageID string, limit, offset int) ([]domain.Message, error)
+	GetBranchThreadID(ctx context.Context, parentMessageID string) (*string, error)
 	FindFirstRootUserMessage(ctx context.Context, sessionID string) (*domain.Message, error)
 	UpdateContent(ctx context.Context, messageID, content string) error
 }

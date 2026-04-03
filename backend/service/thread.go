@@ -47,22 +47,22 @@ func (s *ThreadService) Reply(ctx context.Context, req ThreadRequest, stream rep
 		return domain.ErrForbidden
 	}
 
-	existing, err := s.messages.GetThreadAsc(ctx, req.ParentMessageID, 1000, 0)
+	threadID, err := s.messages.GetBranchThreadID(ctx, req.ParentMessageID)
 	if err != nil {
 		return err
 	}
 
-	threadID, err := s.resolveThread(ctx, req, parentMessage, existing)
+	resolvedThreadID, err := s.resolveThread(ctx, req.APIKey, parentMessage, threadID)
 	if err != nil {
 		return err
 	}
 
-	if err := s.assistant.AddUserMessage(ctx, req.APIKey, threadID, req.UserMessage); err != nil {
+	if err := s.assistant.AddUserMessage(ctx, req.APIKey, resolvedThreadID, req.UserMessage); err != nil {
 		return err
 	}
 
 	parentID := req.ParentMessageID
-	if _, err := s.messages.Save(ctx, session.ID, "user", req.UserMessage, &threadID, &parentID); err != nil {
+	if _, err := s.messages.Save(ctx, session.ID, "user", req.UserMessage, &resolvedThreadID, &parentID); err != nil {
 		return err
 	}
 
@@ -70,9 +70,9 @@ func (s *ThreadService) Reply(ctx context.Context, req ThreadRequest, stream rep
 		return err
 	}
 
-	assistantText, err := s.assistant.RunAndStream(ctx, req.APIKey, threadID, *session.AssistantID, stream)
+	assistantText, err := s.assistant.RunAndStream(ctx, req.APIKey, resolvedThreadID, *session.AssistantID, stream)
 	if assistantText != "" {
-		if _, saveErr := s.messages.Save(ctx, session.ID, "assistant", assistantText, &threadID, &parentID); saveErr != nil {
+		if _, saveErr := s.messages.Save(ctx, session.ID, "assistant", assistantText, &resolvedThreadID, &parentID); saveErr != nil {
 			return saveErr
 		}
 	}
@@ -106,22 +106,66 @@ func (s *ThreadService) Get(ctx context.Context, apiKeyHash, parentMessageID str
 	return s.messages.GetThreadDesc(ctx, parentMessageID, limit, offset)
 }
 
-func (s *ThreadService) resolveThread(ctx context.Context, req ThreadRequest, parentMessage *domain.Message, existing []domain.Message) (string, error) {
-	if len(existing) == 0 {
-		threadID, err := s.assistant.CreateThread(ctx, req.APIKey)
-		if err != nil {
-			return "", err
-		}
-		if parentMessage.Role == "assistant" {
-			if err := s.assistant.AddAssistantMessage(ctx, req.APIKey, threadID, parentMessage.Content); err != nil {
-				return "", err
-			}
-		}
-		return threadID, nil
+func (s *ThreadService) resolveThread(ctx context.Context, apiKey string, parentMessage *domain.Message, existingThreadID *string) (string, error) {
+	if existingThreadID != nil {
+		return *existingThreadID, nil
 	}
 
-	if existing[0].OpenAIThreadID == nil {
-		return "", domain.ErrInternal
+	threadID, err := s.assistant.CreateThread(ctx, apiKey)
+	if err != nil {
+		return "", err
 	}
-	return *existing[0].OpenAIThreadID, nil
+
+	messages, err := s.loadBranchContext(ctx, parentMessage)
+	if err != nil {
+		return "", err
+	}
+	for _, message := range messages {
+		if err := s.replayMessage(ctx, apiKey, threadID, message); err != nil {
+			return "", err
+		}
+	}
+
+	return threadID, nil
+}
+
+func (s *ThreadService) loadBranchContext(ctx context.Context, message *domain.Message) ([]domain.Message, error) {
+	var messages []domain.Message
+	current := message
+
+	for current != nil {
+		messages = append(messages, *current)
+		if current.ParentMessageID == nil {
+			break
+		}
+
+		next, err := s.messages.GetMessageByID(ctx, *current.ParentMessageID)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil {
+			return nil, domain.ErrInternal
+		}
+		current = next
+	}
+
+	reverseMessages(messages)
+	return messages, nil
+}
+
+func (s *ThreadService) replayMessage(ctx context.Context, apiKey, threadID string, message domain.Message) error {
+	switch message.Role {
+	case "assistant":
+		return s.assistant.AddAssistantMessage(ctx, apiKey, threadID, message.Content)
+	case "user":
+		return s.assistant.AddUserMessage(ctx, apiKey, threadID, message.Content)
+	default:
+		return domain.ErrInternal
+	}
+}
+
+func reverseMessages(messages []domain.Message) {
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
 }

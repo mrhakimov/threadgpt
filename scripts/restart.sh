@@ -18,7 +18,7 @@ sleep 2
 
 echo "Starting frontend..."
 cd "$PROJECT_ROOT/frontend"
-npm run dev &
+npm run dev -- --port 3001 &
 FRONTEND_PID=$!
 echo "Frontend started (PID $FRONTEND_PID)"
 

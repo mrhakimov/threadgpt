@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +52,31 @@ func TestSupabaseStore_GetByID_DecodesSnakeCaseFields(t *testing.T) {
 	}
 	if session.CreatedAt != "2024-01-01T00:00:00Z" {
 		t.Fatalf("expected created_at to decode, got %q", session.CreatedAt)
+	}
+}
+
+func TestSupabaseStore_SetSystemPrompt_OnlyUpdatesSessionRecord(t *testing.T) {
+	var requests []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+
+		if r.Method != http.MethodPatch || r.URL.Path != "/rest/v1/sessions" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	t.Setenv("SUPABASE_URL", srv.URL)
+	t.Setenv("SUPABASE_SERVICE_KEY", "test-service-key")
+
+	store := NewSupabaseStore()
+	if err := store.SetSystemPrompt(context.Background(), "session-1", "Updated prompt"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 request, got %d: %s", len(requests), strings.Join(requests, ", "))
 	}
 }

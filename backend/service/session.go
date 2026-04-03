@@ -8,12 +8,14 @@ import (
 
 type SessionService struct {
 	sessions  repository.SessionRepository
+	messages  repository.MessageRepository
 	assistant repository.AssistantClient
 }
 
-func NewSessionService(sessions repository.SessionRepository, assistant repository.AssistantClient) *SessionService {
+func NewSessionService(sessions repository.SessionRepository, messages repository.MessageRepository, assistant repository.AssistantClient) *SessionService {
 	return &SessionService{
 		sessions:  sessions,
+		messages:  messages,
 		assistant: assistant,
 	}
 }
@@ -65,6 +67,9 @@ func (s *SessionService) Update(ctx context.Context, apiKey, apiKeyHash, session
 		if err := s.sessions.SetSystemPrompt(ctx, sessionID, systemPrompt); err != nil {
 			return err
 		}
+		if err := s.syncFirstRootUserMessage(ctx, sessionID, systemPrompt); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -75,4 +80,15 @@ func (s *SessionService) Delete(ctx context.Context, apiKeyHash, sessionID strin
 		return err
 	}
 	return s.sessions.Delete(ctx, sessionID)
+}
+
+func (s *SessionService) syncFirstRootUserMessage(ctx context.Context, sessionID, systemPrompt string) error {
+	firstMessage, err := s.messages.FindFirstRootUserMessage(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if firstMessage == nil {
+		return nil
+	}
+	return s.messages.UpdateContent(ctx, firstMessage.ID, systemPrompt)
 }

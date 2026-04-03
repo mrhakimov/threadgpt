@@ -13,6 +13,10 @@ type ChatRequest struct {
 }
 
 func HandleChat(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleChat(w, r)
+}
+
+func (a *Application) HandleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -34,12 +38,12 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	apiKeyHash := APIKeyHashFromContext(r.Context())
-	if !app().auth.AllowChat("chat:" + apiKeyHash) {
+	if !a.auth.AllowChat("chat:" + apiKeyHash) {
 		writeServiceError(w, domain.ErrRateLimited)
 		return
 	}
 
-	err := app().chat.Handle(r.Context(), service.ChatRequest{
+	err := a.chat.Handle(r.Context(), service.ChatRequest{
 		APIKey:      APIKeyFromContext(r.Context()),
 		APIKeyHash:  apiKeyHash,
 		UserMessage: req.UserMessage,

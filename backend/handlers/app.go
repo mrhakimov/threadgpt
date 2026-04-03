@@ -12,7 +12,15 @@ import (
 	"threadgpt/service"
 )
 
-type application struct {
+type Dependencies struct {
+	Auth     *service.AuthService
+	Chat     *service.ChatService
+	History  *service.HistoryService
+	Sessions *service.SessionService
+	Threads  *service.ThreadService
+}
+
+type Application struct {
 	auth     *service.AuthService
 	chat     *service.ChatService
 	history  *service.HistoryService
@@ -21,24 +29,38 @@ type application struct {
 }
 
 var (
-	defaultApp     *application
+	defaultApp     *Application
 	defaultAppOnce sync.Once
 	uuidRe         = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 )
 
-func app() *application {
-	defaultAppOnce.Do(func() {
-		store := data.NewSupabaseStore()
-		assistant := data.NewOpenAIClient()
-		auth := service.NewAuthService()
+func NewApplication(deps Dependencies) *Application {
+	return &Application{
+		auth:     deps.Auth,
+		chat:     deps.Chat,
+		history:  deps.History,
+		sessions: deps.Sessions,
+		threads:  deps.Threads,
+	}
+}
 
-		defaultApp = &application{
-			auth:     auth,
-			chat:     service.NewChatService(store, store, assistant),
-			history:  service.NewHistoryService(store, store),
-			sessions: service.NewSessionService(store, assistant),
-			threads:  service.NewThreadService(store, store, assistant),
-		}
+func NewDefaultApplication() *Application {
+	store := data.NewSupabaseStore()
+	assistant := data.NewOpenAIClient()
+	auth := service.NewAuthService()
+
+	return NewApplication(Dependencies{
+		Auth:     auth,
+		Chat:     service.NewChatService(store, store, assistant),
+		History:  service.NewHistoryService(store, store),
+		Sessions: service.NewSessionService(store, store, assistant),
+		Threads:  service.NewThreadService(store, store, assistant),
+	})
+}
+
+func currentApp() *Application {
+	defaultAppOnce.Do(func() {
+		defaultApp = NewDefaultApplication()
 	})
 	return defaultApp
 }

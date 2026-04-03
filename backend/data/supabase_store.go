@@ -103,21 +103,9 @@ func (s *SupabaseStore) Rename(ctx context.Context, sessionID, name string) erro
 }
 
 func (s *SupabaseStore) SetSystemPrompt(ctx context.Context, sessionID, systemPrompt string) error {
-	if err := s.doRequest(ctx, http.MethodPatch, filterPath("sessions", url.Values{
+	return s.doRequest(ctx, http.MethodPatch, filterPath("sessions", url.Values{
 		"id": {"eq." + sessionID},
-	}), map[string]string{"system_prompt": systemPrompt}, nil); err != nil {
-		return err
-	}
-
-	firstMessage, err := s.FindFirstRootUserMessage(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-	if firstMessage == nil {
-		return nil
-	}
-
-	return s.UpdateContent(ctx, firstMessage.ID, systemPrompt)
+	}), map[string]string{"system_prompt": systemPrompt}, nil)
 }
 
 func (s *SupabaseStore) UpdateAssistant(ctx context.Context, sessionID, assistantID string) error {
@@ -234,6 +222,23 @@ func (s *SupabaseStore) GetThreadDesc(ctx context.Context, parentMessageID strin
 	return messages, nil
 }
 
+func (s *SupabaseStore) GetBranchThreadID(ctx context.Context, parentMessageID string) (*string, error) {
+	var messages []domain.Message
+	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
+		"parent_message_id": {"eq." + parentMessageID},
+		"openai_thread_id":  {"not.is.null"},
+		"order":             {"created_at.asc"},
+		"limit":             {"1"},
+	}), nil, &messages)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 || messages[0].OpenAIThreadID == nil {
+		return nil, nil
+	}
+	return messages[0].OpenAIThreadID, nil
+}
+
 func (s *SupabaseStore) FindFirstRootUserMessage(ctx context.Context, sessionID string) (*domain.Message, error) {
 	var messages []domain.Message
 	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
@@ -269,6 +274,7 @@ func (s *SupabaseStore) enrichReplyCounts(ctx context.Context, sessionID string,
 		"parent_message_id": {"not.is.null"},
 		"role":              {"eq.user"},
 	}), nil, &threadMessages); err != nil {
+		log.Printf("supabase reply count enrichment failed for session %s: %v", sessionID, err)
 		return messages, nil
 	}
 
