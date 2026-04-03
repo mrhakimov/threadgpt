@@ -34,7 +34,6 @@ function formatTimeRemaining(expiresAt: Date): string {
 
 export default function SettingsPage({ closing, onClose, onLogout, theme, setTheme }: Props) {
   const [confirming, setConfirming] = useState(false)
-  const [pageReady, setPageReady] = useState(false)
   const [loading, setLoading] = useState(true)
   const [expiresAt, setExpiresAt] = useState<Date | null>(null)
   const [timeRemaining, setTimeRemaining] = useState<string>("")
@@ -46,7 +45,7 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
       .catch(() => {})
       .finally(() => {
         const elapsed = Date.now() - start
-        const remaining = Math.max(0, 200 - elapsed)
+        const remaining = Math.max(0, 400 - elapsed)
         setTimeout(() => setLoading(false), remaining)
       })
   }, [])
@@ -69,7 +68,6 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
         "fixed inset-0 z-50 bg-background flex flex-col",
         closing ? "animate-settings-page-out" : "animate-settings-page-in"
       )}
-      onAnimationEnd={() => setPageReady(true)}
     >
       <header className="shrink-0 border-b px-4 py-3 flex items-center gap-3">
         <h1 className="font-semibold">Settings</h1>
@@ -80,7 +78,7 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
         </div>
       </header>
 
-      {pageReady && loading ? (
+      {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
