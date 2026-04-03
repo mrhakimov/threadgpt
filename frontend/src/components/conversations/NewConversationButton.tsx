@@ -3,13 +3,11 @@ import { Button } from "@/components/ui/button"
 
 interface Props {
   collapsed: boolean
-  disabled?: boolean
   onClick: () => void
 }
 
 export default function NewConversationButton({
   collapsed,
-  disabled,
   onClick,
 }: Props) {
   return (
@@ -18,7 +16,6 @@ export default function NewConversationButton({
         variant="outline"
         size="sm"
         onClick={onClick}
-        disabled={disabled}
         title="New conversation"
         className={`w-full justify-start gap-2 overflow-hidden ${
           collapsed ? "border-transparent bg-transparent shadow-none hover:bg-accent" : ""

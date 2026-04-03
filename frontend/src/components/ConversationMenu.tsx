@@ -21,10 +21,11 @@ interface Props {
   collapsed: boolean
   onToggle: () => void
   onSelectSession: (sessionId: string | null) => void
+  onRequestFocusCurrentInput?: () => void
   onRenameActive?: (name: string) => void
   refreshTrigger?: number
 }
-export default function ConversationMenu({ activeSessionId, isCurrentEmpty, collapsed, onToggle, onSelectSession, onRenameActive, refreshTrigger }: Props) {
+export default function ConversationMenu({ activeSessionId, isCurrentEmpty, collapsed, onToggle, onSelectSession, onRequestFocusCurrentInput, onRenameActive, refreshTrigger }: Props) {
   const [expanded, setExpanded] = useState(!collapsed)
   const [sessions, setSessions] = useState<Session[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -110,7 +111,10 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
   }, [hasMore, loadingMore, loadMoreSessions])
 
   function handleNewConversation() {
-    if (isCurrentEmpty) return
+    if (isCurrentEmpty) {
+      onRequestFocusCurrentInput?.()
+      return
+    }
     onSelectSession(null)
   }
 
@@ -165,7 +169,7 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
       }`}
     >
       <ConversationMenuHeader collapsed={collapsed} onToggle={onToggle} />
-      <NewConversationButton collapsed={collapsed} disabled={isCurrentEmpty} onClick={handleNewConversation} />
+      <NewConversationButton collapsed={collapsed} onClick={handleNewConversation} />
 
       {expanded && (
         <div className="flex flex-col flex-1 overflow-hidden p-2 pt-1">

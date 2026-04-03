@@ -136,6 +136,32 @@ func (a *Application) HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
+	currentApp().HandleAuthInfo(w, r)
+}
+
+func (a *Application) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cookie, err := r.Cookie("threadgpt_token")
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	expiresAt, err := a.auth.GetExpiresAt(cookie.Value)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"expires_at": expiresAt.UTC().Format("2006-01-02T15:04:05Z")})
+}
+
 func HandleLogout(w http.ResponseWriter, r *http.Request) {
 	currentApp().HandleLogout(w, r)
 }

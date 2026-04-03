@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { X } from "lucide-react"
+import { useState, useEffect } from "react"
+import { X, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { logoutUser } from "@/services/authService"
+import { fetchAuthInfo } from "@/data/authApi"
 import { cn } from "@/lib/utils"
 import type { Theme } from "@/hooks/useTheme"
 
@@ -21,8 +22,41 @@ const THEME_OPTIONS: { label: string; value: Theme }[] = [
   { label: "Dark", value: "dark" },
 ]
 
+function formatTimeRemaining(expiresAt: Date): string {
+  const diffMs = expiresAt.getTime() - Date.now()
+  if (diffMs <= 0) return "Expired"
+  const totalMinutes = Math.floor(diffMs / 60000)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours > 0) return `${hours}h ${minutes}m remaining`
+  return `${minutes}m remaining`
+}
+
 export default function SettingsPage({ closing, onClose, onLogout, theme, setTheme }: Props) {
   const [confirming, setConfirming] = useState(false)
+  const [pageReady, setPageReady] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [expiresAt, setExpiresAt] = useState<Date | null>(null)
+  const [timeRemaining, setTimeRemaining] = useState<string>("")
+
+  useEffect(() => {
+    const start = Date.now()
+    fetchAuthInfo()
+      .then((info) => setExpiresAt(new Date(info.expires_at)))
+      .catch(() => {})
+      .finally(() => {
+        const elapsed = Date.now() - start
+        const remaining = Math.max(0, 200 - elapsed)
+        setTimeout(() => setLoading(false), remaining)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!expiresAt) return
+    setTimeRemaining(formatTimeRemaining(expiresAt))
+    const id = setInterval(() => setTimeRemaining(formatTimeRemaining(expiresAt)), 60000)
+    return () => clearInterval(id)
+  }, [expiresAt])
 
   async function handleLogout() {
     await logoutUser()
@@ -35,6 +69,7 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
         "fixed inset-0 z-50 bg-background flex flex-col",
         closing ? "animate-settings-page-out" : "animate-settings-page-in"
       )}
+      onAnimationEnd={() => setPageReady(true)}
     >
       <header className="shrink-0 border-b px-4 py-3 flex items-center gap-3">
         <h1 className="font-semibold">Settings</h1>
@@ -45,7 +80,13 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      {pageReady && loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : null}
+
+      <div className={cn("flex-1 overflow-y-auto px-6 py-6", loading && "hidden")}>
         <div className="max-w-lg mx-auto space-y-8">
 
           {/* Appearance */}
@@ -82,7 +123,12 @@ export default function SettingsPage({ closing, onClose, onLogout, theme, setThe
             </p>
             <div className="border-b border-border" />
             <div className="flex items-center justify-between py-3 border-b border-border">
-              <span className="text-sm">Session key</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Session key</span>
+                {timeRemaining && (
+                  <span className="text-xs text-muted-foreground tabular-nums">{timeRemaining}</span>
+                )}
+              </div>
               <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                 ● Active
               </span>

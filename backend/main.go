@@ -140,6 +140,7 @@ func main() {
 
 	handle("/api/auth", app.HandleAuth)
 	handle("/api/auth/check", app.HandleAuthCheck)
+	handle("/api/auth/info", app.HandleAuthInfo)
 	handle("/api/auth/logout", app.HandleLogout)
 	handle("/api/session", app.RequireAuth(app.HandleSession))
 	handle("/api/sessions", app.RequireAuth(app.HandleSessions))

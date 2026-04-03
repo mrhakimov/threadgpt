@@ -29,7 +29,9 @@ vi.mock("@/components/conversations/ConversationMenuHeader", () => ({
 }))
 
 vi.mock("@/components/conversations/NewConversationButton", () => ({
-  default: () => <button type="button">New</button>,
+  default: ({ onClick }: { onClick: () => void }) => (
+    <button type="button" onClick={onClick}>New</button>
+  ),
 }))
 
 vi.mock("@/components/conversations/ConversationListItem", () => ({
@@ -73,6 +75,39 @@ describe("ConversationMenu", () => {
 
     expect(listSessions).toHaveBeenCalledTimes(1)
     expect(screen.getAllByTestId("loading-spinner")).toHaveLength(1)
+  })
+
+  it("focuses the current input instead of starting a new session when the current chat is empty", async () => {
+    listSessions.mockResolvedValue({
+      sessions: [],
+      has_more: false,
+    })
+
+    const onSelectSession = vi.fn()
+    const onRequestFocusCurrentInput = vi.fn()
+
+    render(
+      <ConversationMenu
+        activeSessionId={null}
+        isCurrentEmpty
+        collapsed={false}
+        onToggle={vi.fn()}
+        onSelectSession={onSelectSession}
+        onRequestFocusCurrentInput={onRequestFocusCurrentInput}
+      />,
+    )
+
+    await act(async () => {
+      vi.advanceTimersByTime(200)
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      screen.getByRole("button", { name: "New" }).click()
+    })
+
+    expect(onRequestFocusCurrentInput).toHaveBeenCalledTimes(1)
+    expect(onSelectSession).not.toHaveBeenCalled()
   })
 
 })

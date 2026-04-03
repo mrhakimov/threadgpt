@@ -162,6 +162,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         collapsed={sidebarCollapsed}
         onToggle={handleToggleSidebar}
         onSelectSession={handleSelectSession}
+        onRequestFocusCurrentInput={() => setFocusTrigger((n) => n + 1)}
         onRenameActive={(name) => setOverrideName(name)}
         refreshTrigger={sidebarRefreshTrigger}
       />

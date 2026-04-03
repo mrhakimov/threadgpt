@@ -96,6 +96,14 @@ func (s *AuthService) Check(token string) error {
 	return nil
 }
 
+func (s *AuthService) GetExpiresAt(token string) (time.Time, error) {
+	entry, ok := s.lookupToken(token)
+	if !ok {
+		return time.Time{}, domain.ErrUnauthorized
+	}
+	return entry.ExpiresAt, nil
+}
+
 func (s *AuthService) Logout(token string) {
 	s.tokenMu.Lock()
 	delete(s.tokenStore, token)

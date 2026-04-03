@@ -13,4 +13,5 @@
 - dark mode
 - Prompt versioning
 - Share a thread
-- Export
+- Export thread + export all threads (all data)
+- Keyboard shortcuts

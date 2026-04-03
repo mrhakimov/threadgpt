@@ -21,3 +21,11 @@ export async function logout(): Promise<void> {
     credentials: "include",
   })
 }
+
+export async function fetchAuthInfo(): Promise<{ expires_at: string }> {
+  const res = await fetch(`${API_URL}/api/auth/info`, {
+    credentials: "include",
+  })
+  if (!res.ok) throw new Error("unauthorized")
+  return res.json()
+}
