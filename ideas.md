@@ -17,3 +17,4 @@
 - Keyboard shortcuts
 - file upload
 - add markdown support
+- poll messages / threads sent from mobile

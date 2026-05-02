@@ -7,182 +7,90 @@ import (
 	"threadgpt/repository"
 )
 
-func TestThreadServiceReply_NewBranchReplaysAncestorPath(t *testing.T) {
-	assistantID := "assistant-1"
-	rootID := "root-user"
-	parentID := "parent-assistant"
-
-	sessionRepo := &stubSessionRepository{
-		session: &domain.Session{
-			ID:          "session-1",
-			APIKeyHash:  "hash-1",
-			AssistantID: &assistantID,
-		},
-	}
-	messageRepo := &stubMessageRepository{
-		messagesByID: map[string]*domain.Message{
-			rootID: {
-				ID:        rootID,
-				SessionID: "session-1",
-				Role:      "user",
-				Content:   "Original question",
-			},
-			parentID: {
-				ID:              parentID,
-				SessionID:       "session-1",
-				Role:            "assistant",
-				Content:         "Original answer",
-				ParentMessageID: &rootID,
-			},
-		},
-	}
-	assistant := &stubAssistantClient{
-		createThreadID:   "branch-thread-1",
-		runAndStreamText: "Follow-up answer",
-	}
-
-	service := NewThreadService(sessionRepo, messageRepo, assistant)
-
-	err := service.Reply(context.Background(), ThreadRequest{
-		APIKey:          "sk-test",
-		APIKeyHash:      "hash-1",
-		ParentMessageID: parentID,
-		UserMessage:     "Follow-up question",
-	}, &stubStreamWriter{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	want := []assistantMessageCall{
-		{role: "user", threadID: "branch-thread-1", content: "Original question"},
-		{role: "assistant", threadID: "branch-thread-1", content: "Original answer"},
-		{role: "user", threadID: "branch-thread-1", content: "Follow-up question"},
-	}
-	if len(assistant.addedMessages) != len(want) {
-		t.Fatalf("expected %d replayed messages, got %d", len(want), len(assistant.addedMessages))
-	}
-	for i := range want {
-		if assistant.addedMessages[i] != want[i] {
-			t.Fatalf("message %d mismatch: got %+v want %+v", i, assistant.addedMessages[i], want[i])
-		}
-	}
-}
-
-func TestThreadServiceReply_UsesStoredBranchThreadID(t *testing.T) {
-	assistantID := "assistant-1"
-	parentID := "parent-1"
-
-	sessionRepo := &stubSessionRepository{
-		session: &domain.Session{
-			ID:          "session-1",
-			APIKeyHash:  "hash-1",
-			AssistantID: &assistantID,
-		},
-	}
-	messageRepo := &stubMessageRepository{
-		messagesByID: map[string]*domain.Message{
-			parentID: {
-				ID:        parentID,
-				SessionID: "session-1",
-				Role:      "assistant",
-				Content:   "Existing reply parent",
-			},
-		},
-		branchThreadID: stringPtr("branch-thread-existing"),
-	}
-	assistant := &stubAssistantClient{
-		runAndStreamText: "Another reply",
-	}
-
-	service := NewThreadService(sessionRepo, messageRepo, assistant)
-
-	err := service.Reply(context.Background(), ThreadRequest{
-		APIKey:          "sk-test",
-		APIKeyHash:      "hash-1",
-		ParentMessageID: parentID,
-		UserMessage:     "Continue branch",
-	}, &stubStreamWriter{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if messageRepo.branchThreadLookupParentID != parentID {
-		t.Fatalf("expected explicit branch thread lookup for %q, got %q", parentID, messageRepo.branchThreadLookupParentID)
-	}
-	if assistant.createThreadCalls != 0 {
-		t.Fatalf("expected existing branch thread to be reused")
-	}
-	if len(assistant.addedMessages) == 0 || assistant.addedMessages[0].threadID != "branch-thread-existing" {
-		t.Fatalf("expected branch thread to be reused, got %+v", assistant.addedMessages)
-	}
-}
-
 func TestThreadServiceReply_ContinuesAfterClientDisconnect(t *testing.T) {
-	assistantID := "assistant-1"
-	rootID := "root-user"
-	parentID := "parent-assistant"
-
 	sessionRepo := &stubSessionRepository{
 		session: &domain.Session{
 			ID:          "session-1",
 			APIKeyHash:  "hash-1",
-			AssistantID: &assistantID,
+			SystemPrompt: stringPtr("Be helpful"),
 		},
 	}
-	messageRepo := &stubMessageRepository{
-		messagesByID: map[string]*domain.Message{
-			rootID: {
-				ID:        rootID,
-				SessionID: "session-1",
-				Role:      "user",
-				Content:   "Original question",
-			},
-			parentID: {
-				ID:              parentID,
-				SessionID:       "session-1",
-				Role:            "assistant",
-				Content:         "Original answer",
-				ParentMessageID: &rootID,
+	conversationRepo := &stubConversationRepository{
+		refByConversationID: map[string]*domain.ConversationRef{
+			"conv-1": {
+				ConversationID: "conv-1",
+				SessionID:      "session-1",
 			},
 		},
 	}
 	assistant := &stubAssistantClient{
-		createThreadID: "branch-thread-1",
-		runAndStreamFunc: func(ctx context.Context, _ string, threadID, assistantID string, _ repository.StreamWriter) (string, error) {
+		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage string, _ repository.StreamWriter) error {
 			if err := ctx.Err(); err != nil {
 				t.Fatalf("expected detached context during stream, got %v", err)
 			}
-			if threadID != "branch-thread-1" {
-				t.Fatalf("unexpected thread id: %q", threadID)
+			if conversationID != "conv-1" {
+				t.Fatalf("unexpected conversation id: %q", conversationID)
 			}
-			if assistantID != "assistant-1" {
-				t.Fatalf("unexpected assistant id: %q", assistantID)
+			if userMessage != "Follow-up question" {
+				t.Fatalf("unexpected user message: %q", userMessage)
 			}
-			return "Saved after disconnect", nil
+			return nil
 		},
 	}
 
-	service := NewThreadService(sessionRepo, messageRepo, assistant)
+	service := NewThreadService(sessionRepo, conversationRepo, assistant)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	err := service.Reply(ctx, ThreadRequest{
-		APIKey:          "sk-test",
-		APIKeyHash:      "hash-1",
-		ParentMessageID: parentID,
-		UserMessage:     "Follow-up question",
+		APIKey:         "sk-test",
+		APIKeyHash:     "hash-1",
+		ConversationID: "conv-1",
+		UserMessage:    "Follow-up question",
 	}, &cancelOnStartStreamWriter{cancel: cancel})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
 
-	if len(messageRepo.savedMessages) != 2 {
-		t.Fatalf("expected user and assistant messages to be saved, got %d", len(messageRepo.savedMessages))
+func TestThreadServiceGet_ExcludesInitialExchangeAndPaginatesNewestFirst(t *testing.T) {
+	sessionRepo := &stubSessionRepository{
+		session: &domain.Session{
+			ID:          "session-1",
+			APIKeyHash:  "hash-1",
+			SystemPrompt: stringPtr("Be helpful"),
+		},
 	}
-	if messageRepo.savedMessages[0].Role != "user" || messageRepo.savedMessages[0].Content != "Follow-up question" {
-		t.Fatalf("unexpected saved user message: %+v", messageRepo.savedMessages[0])
+	conversationRepo := &stubConversationRepository{
+		refByConversationID: map[string]*domain.ConversationRef{
+			"conv-1": {
+				ConversationID: "conv-1",
+				SessionID:      "session-1",
+			},
+		},
 	}
-	if messageRepo.savedMessages[1].Role != "assistant" || messageRepo.savedMessages[1].Content != "Saved after disconnect" {
-		t.Fatalf("unexpected saved assistant message: %+v", messageRepo.savedMessages[1])
+	assistant := &stubAssistantClient{
+		listMessages: []domain.Message{
+			{ID: "msg-1", Role: "user", Content: "Top-level question"},
+			{ID: "msg-2", Role: "assistant", Content: "Top-level answer"},
+			{ID: "msg-3", Role: "user", Content: "Follow-up one"},
+			{ID: "msg-4", Role: "assistant", Content: "Answer one"},
+			{ID: "msg-5", Role: "user", Content: "Follow-up two"},
+			{ID: "msg-6", Role: "assistant", Content: "Answer two"},
+		},
+	}
+
+	service := NewThreadService(sessionRepo, conversationRepo, assistant)
+
+	messages, err := service.Get(context.Background(), "sk-test", "hash-1", "conv-1", 2, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	if messages[0].ID != "msg-5" || messages[1].ID != "msg-6" {
+		t.Fatalf("unexpected paginated messages: %+v", messages)
 	}
 }
 
@@ -203,7 +111,11 @@ func (s *stubSessionRepository) ListByAPIKeyHash(context.Context, string, int, i
 	return nil, nil
 }
 
-func (s *stubSessionRepository) CreateWithPrompt(context.Context, string, string) (*domain.Session, error) {
+func (s *stubSessionRepository) CreateWithPrompt(_ context.Context, apiKeyHash, systemPrompt string) (*domain.Session, error) {
+	if s.session == nil {
+		s.session = &domain.Session{ID: "session-1", APIKeyHash: apiKeyHash}
+	}
+	s.session.SystemPrompt = &systemPrompt
 	return s.session, nil
 }
 
@@ -231,114 +143,73 @@ func (s *stubSessionRepository) Delete(context.Context, string) error {
 	return nil
 }
 
-type stubMessageRepository struct {
-	firstRootUserMessage       *domain.Message
-	messagesByID               map[string]*domain.Message
-	updatedMessageID           string
-	updatedContent             string
-	branchThreadID             *string
-	branchThreadLookupParentID string
-	savedMessages              []domain.Message
+type stubConversationRepository struct {
+	createdConversationID string
+	createdSessionID      string
+	refByConversationID   map[string]*domain.ConversationRef
+	listBySessionAsc      []domain.ConversationRef
 }
 
-func (m *stubMessageRepository) Save(_ context.Context, sessionID, role, content string, openAIThreadID, parentMessageID *string) (*domain.Message, error) {
-	message := domain.Message{
-		ID:        "saved-message",
-		SessionID: sessionID,
-		Role:      role,
-		Content:   content,
+func (r *stubConversationRepository) Create(_ context.Context, sessionID, conversationID string) (*domain.ConversationRef, error) {
+	r.createdSessionID = sessionID
+	r.createdConversationID = conversationID
+	ref := &domain.ConversationRef{
+		ConversationID: conversationID,
+		SessionID:      sessionID,
 	}
-	if openAIThreadID != nil {
-		message.OpenAIThreadID = stringPtr(*openAIThreadID)
+	if r.refByConversationID == nil {
+		r.refByConversationID = map[string]*domain.ConversationRef{}
 	}
-	if parentMessageID != nil {
-		message.ParentMessageID = stringPtr(*parentMessageID)
-	}
-	m.savedMessages = append(m.savedMessages, message)
-	return &message, nil
+	r.refByConversationID[conversationID] = ref
+	return ref, nil
 }
 
-func (m *stubMessageRepository) GetMessageByID(_ context.Context, messageID string) (*domain.Message, error) {
-	if m.messagesByID == nil {
+func (r *stubConversationRepository) GetByConversationID(_ context.Context, conversationID string) (*domain.ConversationRef, error) {
+	if r.refByConversationID == nil {
 		return nil, nil
 	}
-	return m.messagesByID[messageID], nil
+	return r.refByConversationID[conversationID], nil
 }
 
-func (m *stubMessageRepository) GetMainAsc(context.Context, string, int, int) ([]domain.Message, error) {
+func (r *stubConversationRepository) ListBySessionDesc(context.Context, string, int, int) ([]domain.ConversationRef, error) {
 	return nil, nil
 }
 
-func (m *stubMessageRepository) GetMainDesc(context.Context, string, int, int) ([]domain.Message, error) {
-	return nil, nil
-}
-
-func (m *stubMessageRepository) GetThreadAsc(context.Context, string, int, int) ([]domain.Message, error) {
-	return nil, nil
-}
-
-func (m *stubMessageRepository) GetThreadDesc(context.Context, string, int, int) ([]domain.Message, error) {
-	return nil, nil
-}
-
-func (m *stubMessageRepository) GetBranchThreadID(_ context.Context, parentMessageID string) (*string, error) {
-	m.branchThreadLookupParentID = parentMessageID
-	return m.branchThreadID, nil
-}
-
-func (m *stubMessageRepository) FindFirstRootUserMessage(context.Context, string) (*domain.Message, error) {
-	return m.firstRootUserMessage, nil
-}
-
-func (m *stubMessageRepository) UpdateContent(_ context.Context, messageID, content string) error {
-	m.updatedMessageID = messageID
-	m.updatedContent = content
-	return nil
+func (r *stubConversationRepository) ListBySessionAsc(context.Context, string) ([]domain.ConversationRef, error) {
+	return append([]domain.ConversationRef(nil), r.listBySessionAsc...), nil
 }
 
 type stubAssistantClient struct {
-	createThreadID      string
-	createThreadCalls   int
-	addedMessages       []assistantMessageCall
-	updatedInstructions string
-	runAndStreamText    string
-	runAndStreamFunc    func(context.Context, string, string, string, repository.StreamWriter) (string, error)
+	createConversationID   string
+	createConversationFunc func(context.Context, string, string) (string, error)
+	runAndStreamFunc       func(context.Context, string, string, string, repository.StreamWriter) error
+	listMessages           []domain.Message
+	deletedConversationIDs []string
 }
 
-type assistantMessageCall struct {
-	role     string
-	threadID string
-	content  string
-}
-
-func (a *stubAssistantClient) CreateAssistant(context.Context, string, string) (string, error) {
-	return "assistant-created", nil
-}
-
-func (a *stubAssistantClient) CreateThread(context.Context, string) (string, error) {
-	a.createThreadCalls++
-	return a.createThreadID, nil
-}
-
-func (a *stubAssistantClient) AddUserMessage(_ context.Context, _ string, threadID, content string) error {
-	a.addedMessages = append(a.addedMessages, assistantMessageCall{role: "user", threadID: threadID, content: content})
-	return nil
-}
-
-func (a *stubAssistantClient) AddAssistantMessage(_ context.Context, _ string, threadID, content string) error {
-	a.addedMessages = append(a.addedMessages, assistantMessageCall{role: "assistant", threadID: threadID, content: content})
-	return nil
-}
-
-func (a *stubAssistantClient) RunAndStream(ctx context.Context, apiKey, threadID, assistantID string, stream repository.StreamWriter) (string, error) {
-	if a.runAndStreamFunc != nil {
-		return a.runAndStreamFunc(ctx, apiKey, threadID, assistantID, stream)
+func (a *stubAssistantClient) CreateConversation(ctx context.Context, apiKey, systemPrompt string) (string, error) {
+	if a.createConversationFunc != nil {
+		return a.createConversationFunc(ctx, apiKey, systemPrompt)
 	}
-	return a.runAndStreamText, nil
+	if a.createConversationID == "" {
+		return "conv-created", nil
+	}
+	return a.createConversationID, nil
 }
 
-func (a *stubAssistantClient) UpdateAssistantInstructions(_ context.Context, _ string, _ string, instructions string) error {
-	a.updatedInstructions = instructions
+func (a *stubAssistantClient) ListMessages(context.Context, string, string) ([]domain.Message, error) {
+	return append([]domain.Message(nil), a.listMessages...), nil
+}
+
+func (a *stubAssistantClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage string, stream repository.StreamWriter) error {
+	if a.runAndStreamFunc != nil {
+		return a.runAndStreamFunc(ctx, apiKey, conversationID, userMessage, stream)
+	}
+	return nil
+}
+
+func (a *stubAssistantClient) DeleteConversation(_ context.Context, _ string, conversationID string) error {
+	a.deletedConversationIDs = append(a.deletedConversationIDs, conversationID)
 	return nil
 }
 

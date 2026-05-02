@@ -8,32 +8,31 @@ import (
 )
 
 func TestChatServiceHandle_ContinuesAfterClientDisconnect(t *testing.T) {
-	assistantID := "assistant-1"
 	sessionRepo := &stubSessionRepository{
 		session: &domain.Session{
-			ID:          "session-1",
-			APIKeyHash:  "hash-1",
-			AssistantID: &assistantID,
+			ID:           "session-1",
+			APIKeyHash:   "hash-1",
+			SystemPrompt: stringPtr("Be helpful"),
 		},
 	}
-	messageRepo := &stubMessageRepository{}
+	conversationRepo := &stubConversationRepository{}
 	assistant := &stubAssistantClient{
-		createThreadID: "thread-1",
-		runAndStreamFunc: func(ctx context.Context, _ string, threadID, assistantID string, _ repository.StreamWriter) (string, error) {
+		createConversationID: "conv-1",
+		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage string, _ repository.StreamWriter) error {
 			if err := ctx.Err(); err != nil {
 				t.Fatalf("expected detached context during stream, got %v", err)
 			}
-			if threadID != "thread-1" {
-				t.Fatalf("unexpected thread id: %q", threadID)
+			if conversationID != "conv-1" {
+				t.Fatalf("unexpected conversation id: %q", conversationID)
 			}
-			if assistantID != "assistant-1" {
-				t.Fatalf("unexpected assistant id: %q", assistantID)
+			if userMessage != "Hello" {
+				t.Fatalf("unexpected user message: %q", userMessage)
 			}
-			return "Saved after disconnect", nil
+			return nil
 		},
 	}
 
-	service := NewChatService(sessionRepo, messageRepo, assistant)
+	service := NewChatService(sessionRepo, conversationRepo, assistant)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	err := service.Handle(ctx, ChatRequest{
@@ -46,13 +45,53 @@ func TestChatServiceHandle_ContinuesAfterClientDisconnect(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(messageRepo.savedMessages) != 2 {
-		t.Fatalf("expected user and assistant messages to be saved, got %d", len(messageRepo.savedMessages))
+	if conversationRepo.createdConversationID != "conv-1" {
+		t.Fatalf("expected created conversation ref, got %q", conversationRepo.createdConversationID)
 	}
-	if messageRepo.savedMessages[0].Role != "user" || messageRepo.savedMessages[0].Content != "Hello" {
-		t.Fatalf("unexpected saved user message: %+v", messageRepo.savedMessages[0])
+	if conversationRepo.createdSessionID != "session-1" {
+		t.Fatalf("expected session-1, got %q", conversationRepo.createdSessionID)
 	}
-	if messageRepo.savedMessages[1].Role != "assistant" || messageRepo.savedMessages[1].Content != "Saved after disconnect" {
-		t.Fatalf("unexpected saved assistant message: %+v", messageRepo.savedMessages[1])
+}
+
+func TestChatServiceHandleInitialMessage_SetsSystemPromptWithoutCreatingConversation(t *testing.T) {
+	sessionRepo := &stubSessionRepository{}
+	conversationRepo := &stubConversationRepository{}
+	assistant := &stubAssistantClient{}
+	stream := &recordingChatStreamWriter{}
+
+	service := NewChatService(sessionRepo, conversationRepo, assistant)
+
+	if err := service.Handle(context.Background(), ChatRequest{
+		APIKeyHash:  "hash-1",
+		UserMessage: "You are concise",
+	}, stream); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+
+	if sessionRepo.session == nil || sessionRepo.session.SystemPrompt == nil || *sessionRepo.session.SystemPrompt != "You are concise" {
+		t.Fatalf("expected session prompt to be stored, got %+v", sessionRepo.session)
+	}
+	if conversationRepo.createdConversationID != "" {
+		t.Fatalf("expected no remote conversation to be created for system prompt setup")
+	}
+	if stream.chunk != initialChatConfirmation {
+		t.Fatalf("expected initial confirmation chunk, got %q", stream.chunk)
+	}
+}
+
+type recordingChatStreamWriter struct {
+	chunk string
+}
+
+func (s *recordingChatStreamWriter) Start(string) error {
+	return nil
+}
+
+func (s *recordingChatStreamWriter) WriteChunk(chunk string) error {
+	s.chunk += chunk
+	return nil
+}
+
+func (s *recordingChatStreamWriter) Close() error {
+	return nil
 }

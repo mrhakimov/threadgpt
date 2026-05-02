@@ -37,7 +37,7 @@ export function incrementMessageReplyCount(
 }
 
 export function isFirstMessageSession(session: Session | null): boolean {
-  return !session?.assistant_id
+  return !session?.system_prompt
 }
 
 export function getChatInputPlaceholder(isFirstMessage: boolean): string {

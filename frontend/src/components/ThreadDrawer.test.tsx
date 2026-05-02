@@ -8,7 +8,7 @@ import type { Message } from "@/types"
 
 const { useThread, messageListMock } = vi.hoisted(() => ({
   useThread: vi.fn(),
-  messageListMock: vi.fn(() => <div data-testid="message-list" />),
+  messageListMock: vi.fn((_props?: unknown) => <div data-testid="message-list" />),
 }))
 
 vi.mock("@/hooks/useThread", () => ({

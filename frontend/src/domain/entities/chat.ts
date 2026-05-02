@@ -3,8 +3,16 @@ export interface Message {
   session_id: string
   role: "user" | "assistant"
   content: string
-  parent_message_id?: string
   reply_count?: number
+  created_at: string
+}
+
+export interface ConversationPreview {
+  conversation_id: string
+  session_id: string
+  user_message: string
+  assistant_message: string
+  reply_count: number
   created_at: string
 }
 
@@ -15,6 +23,11 @@ export interface Session {
   name?: string
   is_new?: boolean
   created_at?: string
+}
+
+export interface ConversationHistoryPage {
+  conversations: ConversationPreview[]
+  has_more: boolean
 }
 
 export interface HistoryPage {

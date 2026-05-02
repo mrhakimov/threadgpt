@@ -10,12 +10,25 @@ type Session struct {
 }
 
 type Message struct {
-	ID              string  `json:"id"`
-	SessionID       string  `json:"session_id"`
-	Role            string  `json:"role"`
-	Content         string  `json:"content"`
-	OpenAIThreadID  *string `json:"openai_thread_id"`
-	ParentMessageID *string `json:"parent_message_id"`
-	ReplyCount      int     `json:"reply_count"`
-	CreatedAt       string  `json:"created_at"`
+	ID         string `json:"id"`
+	SessionID  string `json:"session_id"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ReplyCount int    `json:"reply_count"`
+	CreatedAt  string `json:"created_at"`
+}
+
+type ConversationRef struct {
+	ConversationID string `json:"conversation_id"`
+	SessionID      string `json:"session_id"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type ConversationPreview struct {
+	ConversationID   string `json:"conversation_id"`
+	SessionID        string `json:"session_id"`
+	UserMessage      string `json:"user_message"`
+	AssistantMessage string `json:"assistant_message"`
+	ReplyCount       int    `json:"reply_count"`
+	CreatedAt        string `json:"created_at"`
 }

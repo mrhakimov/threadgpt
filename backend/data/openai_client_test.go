@@ -11,21 +11,14 @@ import (
 
 func TestOpenAIClient_RunAndStreamHandlesLargeChunks(t *testing.T) {
 	restore := mockOpenAITransport(func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodPost || req.URL.Path != "/v1/threads/thread-1/runs" {
+		if req.Method != http.MethodPost || req.URL.Path != "/v1/responses" {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
 		}
 
 		chunk := strings.Repeat("a", 70*1024)
 		payload, err := json.Marshal(map[string]any{
-			"object": "thread.message.delta",
-			"delta": map[string]any{
-				"content": []map[string]any{
-					{
-						"type": "text",
-						"text": map[string]any{"value": chunk},
-					},
-				},
-			},
+			"type":  "response.output_text.delta",
+			"delta": chunk,
 		})
 		if err != nil {
 			t.Fatalf("failed to build payload: %v", err)
@@ -43,15 +36,11 @@ func TestOpenAIClient_RunAndStreamHandlesLargeChunks(t *testing.T) {
 	client := NewOpenAIClient()
 	stream := &recordingStreamWriter{}
 
-	text, err := client.RunAndStream(context.Background(), "sk-test", "thread-1", "assistant-1", stream)
-	if err != nil {
+	if err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", stream); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if text != strings.Repeat("a", 70*1024) {
-		t.Fatalf("expected full chunk to be returned, got %d bytes", len(text))
-	}
-	if stream.output.String() != text {
-		t.Fatalf("expected stream output to match returned text")
+	if stream.output.String() != strings.Repeat("a", 70*1024) {
+		t.Fatalf("expected full chunk to be streamed, got %d bytes", len(stream.output.String()))
 	}
 }
 

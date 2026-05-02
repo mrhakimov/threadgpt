@@ -3,12 +3,12 @@ import { MESSAGE_PAGE_SIZE } from "@/domain/constants"
 import { API_URL, JSON_HEADERS, requestJson, requestStream } from "@/data/http/client"
 
 export async function fetchThreadMessages(
-  parentMessageId: string,
+  conversationId: string,
   limit = MESSAGE_PAGE_SIZE,
   offset = 0,
 ): Promise<HistoryPage> {
   return requestJson(
-    `${API_URL}/api/thread?parent_message_id=${encodeURIComponent(parentMessageId)}&limit=${limit}&offset=${offset}`,
+    `${API_URL}/api/thread?conversation_id=${encodeURIComponent(conversationId)}&limit=${limit}&offset=${offset}`,
     {
       credentials: "include",
     },
@@ -16,7 +16,7 @@ export async function fetchThreadMessages(
 }
 
 export async function sendThreadMessage(
-  parentMessageId: string,
+  conversationId: string,
   userMessage: string,
   onChunk: (chunk: string) => void,
   signal?: AbortSignal,
@@ -29,7 +29,7 @@ export async function sendThreadMessage(
       credentials: "include",
       signal,
       body: JSON.stringify({
-        parent_message_id: parentMessageId,
+        conversation_id: conversationId,
         user_message: userMessage,
       }),
     },

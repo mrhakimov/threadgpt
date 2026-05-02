@@ -7,169 +7,109 @@ import (
 )
 
 type ThreadService struct {
-	sessions  repository.SessionRepository
-	messages  repository.MessageRepository
-	assistant repository.AssistantClient
+	sessions      repository.SessionRepository
+	conversations repository.ConversationRepository
+	assistant     repository.AssistantClient
 }
 
 type ThreadRequest struct {
-	APIKey          string
-	APIKeyHash      string
-	ParentMessageID string
-	UserMessage     string
+	APIKey         string
+	APIKeyHash     string
+	ConversationID string
+	UserMessage    string
 }
 
-func NewThreadService(sessions repository.SessionRepository, messages repository.MessageRepository, assistant repository.AssistantClient) *ThreadService {
+func NewThreadService(sessions repository.SessionRepository, conversations repository.ConversationRepository, assistant repository.AssistantClient) *ThreadService {
 	return &ThreadService{
-		sessions:  sessions,
-		messages:  messages,
-		assistant: assistant,
+		sessions:      sessions,
+		conversations: conversations,
+		assistant:     assistant,
 	}
 }
 
 func (s *ThreadService) Reply(ctx context.Context, req ThreadRequest, stream repository.StreamWriter) error {
-	parentMessage, err := s.messages.GetMessageByID(ctx, req.ParentMessageID)
+	ref, session, err := s.resolveConversation(ctx, req.APIKeyHash, req.ConversationID)
 	if err != nil {
 		return err
 	}
-	if parentMessage == nil {
+	if ref == nil || session == nil {
 		return domain.ErrNotFound
 	}
 
-	session, err := s.sessions.GetByID(ctx, parentMessage.SessionID)
-	if err != nil {
-		return err
-	}
-	if session == nil || session.AssistantID == nil {
-		return domain.ErrNotFound
-	}
-	if session.APIKeyHash != req.APIKeyHash {
-		return domain.ErrForbidden
-	}
-
-	// Closing a subthread drawer aborts the client request, but we still want
-	// the branch reply to finish and be saved so later refreshes stay consistent.
 	opCtx := context.WithoutCancel(ctx)
-
-	threadID, err := s.messages.GetBranchThreadID(opCtx, req.ParentMessageID)
-	if err != nil {
-		return err
-	}
-
-	resolvedThreadID, err := s.resolveThread(opCtx, req.APIKey, parentMessage, threadID)
-	if err != nil {
-		return err
-	}
-
-	if err := s.assistant.AddUserMessage(opCtx, req.APIKey, resolvedThreadID, req.UserMessage); err != nil {
-		return err
-	}
-
-	parentID := req.ParentMessageID
-	if _, err := s.messages.Save(opCtx, session.ID, "user", req.UserMessage, &resolvedThreadID, &parentID); err != nil {
-		return err
-	}
-
 	if err := stream.Start(""); err != nil {
 		return err
 	}
-
-	assistantText, err := s.assistant.RunAndStream(opCtx, req.APIKey, resolvedThreadID, *session.AssistantID, stream)
-	if assistantText != "" {
-		if _, saveErr := s.messages.Save(opCtx, session.ID, "assistant", assistantText, &resolvedThreadID, &parentID); saveErr != nil {
-			return saveErr
-		}
-	}
-	if err != nil {
+	if err := s.assistant.RunAndStream(opCtx, req.APIKey, ref.ConversationID, req.UserMessage, stream); err != nil {
 		return err
 	}
-
 	return stream.Close()
 }
 
-func (s *ThreadService) Get(ctx context.Context, apiKeyHash, parentMessageID string, limit, offset int) ([]domain.Message, error) {
-	parentMessage, err := s.messages.GetMessageByID(ctx, parentMessageID)
+func (s *ThreadService) Get(ctx context.Context, apiKey, apiKeyHash, conversationID string, limit, offset int) ([]domain.Message, error) {
+	ref, _, err := s.resolveConversation(ctx, apiKeyHash, conversationID)
 	if err != nil {
 		return nil, err
 	}
-	if parentMessage == nil {
+	if ref == nil {
 		return nil, domain.ErrNotFound
 	}
 
-	session, err := s.sessions.GetByID(ctx, parentMessage.SessionID)
+	messages, err := s.assistant.ListMessages(ctx, apiKey, ref.ConversationID)
 	if err != nil {
 		return nil, err
+	}
+	if len(messages) <= 2 {
+		return []domain.Message{}, nil
+	}
+
+	threadMessages := messages[2:]
+	paginated := paginateNewestAscending(threadMessages, limit, offset)
+	for i := range paginated {
+		paginated[i].SessionID = ref.SessionID
+	}
+
+	return paginated, nil
+}
+
+func (s *ThreadService) resolveConversation(ctx context.Context, apiKeyHash, conversationID string) (*domain.ConversationRef, *domain.Session, error) {
+	ref, err := s.conversations.GetByConversationID(ctx, conversationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ref == nil {
+		return nil, nil, domain.ErrNotFound
+	}
+
+	session, err := s.sessions.GetByID(ctx, ref.SessionID)
+	if err != nil {
+		return nil, nil, err
 	}
 	if session == nil {
-		return nil, domain.ErrNotFound
+		return nil, nil, domain.ErrNotFound
 	}
 	if session.APIKeyHash != apiKeyHash {
-		return nil, domain.ErrForbidden
+		return nil, nil, domain.ErrForbidden
 	}
 
-	return s.messages.GetThreadDesc(ctx, parentMessageID, limit, offset)
+	return ref, session, nil
 }
 
-func (s *ThreadService) resolveThread(ctx context.Context, apiKey string, parentMessage *domain.Message, existingThreadID *string) (string, error) {
-	if existingThreadID != nil {
-		return *existingThreadID, nil
+func paginateNewestAscending(messages []domain.Message, limit, offset int) []domain.Message {
+	if len(messages) == 0 || limit <= 0 || offset >= len(messages) {
+		return []domain.Message{}
 	}
 
-	threadID, err := s.assistant.CreateThread(ctx, apiKey)
-	if err != nil {
-		return "", err
+	end := len(messages) - offset
+	if end < 0 {
+		return []domain.Message{}
 	}
 
-	messages, err := s.loadBranchContext(ctx, parentMessage)
-	if err != nil {
-		return "", err
-	}
-	for _, message := range messages {
-		if err := s.replayMessage(ctx, apiKey, threadID, message); err != nil {
-			return "", err
-		}
+	start := end - limit
+	if start < 0 {
+		start = 0
 	}
 
-	return threadID, nil
-}
-
-func (s *ThreadService) loadBranchContext(ctx context.Context, message *domain.Message) ([]domain.Message, error) {
-	var messages []domain.Message
-	current := message
-
-	for current != nil {
-		messages = append(messages, *current)
-		if current.ParentMessageID == nil {
-			break
-		}
-
-		next, err := s.messages.GetMessageByID(ctx, *current.ParentMessageID)
-		if err != nil {
-			return nil, err
-		}
-		if next == nil {
-			return nil, domain.ErrInternal
-		}
-		current = next
-	}
-
-	reverseMessages(messages)
-	return messages, nil
-}
-
-func (s *ThreadService) replayMessage(ctx context.Context, apiKey, threadID string, message domain.Message) error {
-	switch message.Role {
-	case "assistant":
-		return s.assistant.AddAssistantMessage(ctx, apiKey, threadID, message.Content)
-	case "user":
-		return s.assistant.AddUserMessage(ctx, apiKey, threadID, message.Content)
-	default:
-		return domain.ErrInternal
-	}
-}
-
-func reverseMessages(messages []domain.Message) {
-	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
-		messages[i], messages[j] = messages[j], messages[i]
-	}
+	items := append([]domain.Message(nil), messages[start:end]...)
+	return items
 }

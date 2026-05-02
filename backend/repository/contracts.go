@@ -17,14 +17,9 @@ type SessionRepository interface {
 	Delete(ctx context.Context, sessionID string) error
 }
 
-type MessageRepository interface {
-	Save(ctx context.Context, sessionID, role, content string, openAIThreadID, parentMessageID *string) (*domain.Message, error)
-	GetMessageByID(ctx context.Context, messageID string) (*domain.Message, error)
-	GetMainAsc(ctx context.Context, sessionID string, limit, offset int) ([]domain.Message, error)
-	GetMainDesc(ctx context.Context, sessionID string, limit, offset int) ([]domain.Message, error)
-	GetThreadAsc(ctx context.Context, parentMessageID string, limit, offset int) ([]domain.Message, error)
-	GetThreadDesc(ctx context.Context, parentMessageID string, limit, offset int) ([]domain.Message, error)
-	GetBranchThreadID(ctx context.Context, parentMessageID string) (*string, error)
-	FindFirstRootUserMessage(ctx context.Context, sessionID string) (*domain.Message, error)
-	UpdateContent(ctx context.Context, messageID, content string) error
+type ConversationRepository interface {
+	Create(ctx context.Context, sessionID, conversationID string) (*domain.ConversationRef, error)
+	GetByConversationID(ctx context.Context, conversationID string) (*domain.ConversationRef, error)
+	ListBySessionDesc(ctx context.Context, sessionID string, limit, offset int) ([]domain.ConversationRef, error)
+	ListBySessionAsc(ctx context.Context, sessionID string) ([]domain.ConversationRef, error)
 }

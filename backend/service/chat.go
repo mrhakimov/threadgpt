@@ -9,9 +9,9 @@ import (
 const initialChatConfirmation = "Context set! Your assistant has been configured with this as its instructions. Send your next message to start chatting."
 
 type ChatService struct {
-	sessions  repository.SessionRepository
-	messages  repository.MessageRepository
-	assistant repository.AssistantClient
+	sessions      repository.SessionRepository
+	conversations repository.ConversationRepository
+	assistant     repository.AssistantClient
 }
 
 type ChatRequest struct {
@@ -22,11 +22,11 @@ type ChatRequest struct {
 	ForceNew    bool
 }
 
-func NewChatService(sessions repository.SessionRepository, messages repository.MessageRepository, assistant repository.AssistantClient) *ChatService {
+func NewChatService(sessions repository.SessionRepository, conversations repository.ConversationRepository, assistant repository.AssistantClient) *ChatService {
 	return &ChatService{
-		sessions:  sessions,
-		messages:  messages,
-		assistant: assistant,
+		sessions:      sessions,
+		conversations: conversations,
+		assistant:     assistant,
 	}
 }
 
@@ -45,38 +45,27 @@ func (s *ChatService) Handle(ctx context.Context, req ChatRequest, stream reposi
 		}
 	}
 
-	if session == nil || session.AssistantID == nil {
+	if session == nil || session.SystemPrompt == nil {
 		return s.handleInitialMessage(ctx, req, session, stream)
 	}
 
-	// Keep the assistant turn running long enough to persist it even if the
-	// browser closes the SSE request mid-response.
+	// Keep the remote conversation running long enough to survive an SSE disconnect.
 	opCtx := context.WithoutCancel(ctx)
 
-	threadID, err := s.assistant.CreateThread(opCtx, req.APIKey)
+	conversationID, err := s.assistant.CreateConversation(opCtx, req.APIKey, *session.SystemPrompt)
 	if err != nil {
 		return err
 	}
-	if err := s.assistant.AddUserMessage(opCtx, req.APIKey, threadID, req.UserMessage); err != nil {
+	if _, err := s.conversations.Create(opCtx, session.ID, conversationID); err != nil {
 		return err
 	}
-	if _, err := s.messages.Save(opCtx, session.ID, "user", req.UserMessage, &threadID, nil); err != nil {
-		return err
-	}
+
 	if err := stream.Start(session.ID); err != nil {
 		return err
 	}
-
-	assistantText, err := s.assistant.RunAndStream(opCtx, req.APIKey, threadID, *session.AssistantID, stream)
-	if assistantText != "" {
-		if _, saveErr := s.messages.Save(opCtx, session.ID, "assistant", assistantText, &threadID, nil); saveErr != nil {
-			return saveErr
-		}
-	}
-	if err != nil {
+	if err := s.assistant.RunAndStream(opCtx, req.APIKey, conversationID, req.UserMessage, stream); err != nil {
 		return err
 	}
-
 	return stream.Close()
 }
 
@@ -91,11 +80,7 @@ func (s *ChatService) resolveSession(ctx context.Context, apiKeyHash, sessionID 
 }
 
 func (s *ChatService) handleInitialMessage(ctx context.Context, req ChatRequest, session *domain.Session, stream repository.StreamWriter) error {
-	assistantID, err := s.assistant.CreateAssistant(ctx, req.APIKey, req.UserMessage)
-	if err != nil {
-		return err
-	}
-
+	var err error
 	if session == nil {
 		session, err = s.sessions.CreateWithPrompt(ctx, req.APIKeyHash, req.UserMessage)
 		if err != nil {
@@ -107,22 +92,10 @@ func (s *ChatService) handleInitialMessage(ctx context.Context, req ChatRequest,
 		}
 	}
 
-	if err := s.sessions.UpdateAssistant(ctx, session.ID, assistantID); err != nil {
-		return err
-	}
-	session.AssistantID = &assistantID
-
-	if _, err := s.messages.Save(ctx, session.ID, "user", req.UserMessage, nil, nil); err != nil {
-		return err
-	}
-
 	if err := stream.Start(session.ID); err != nil {
 		return err
 	}
 	if err := stream.WriteChunk(initialChatConfirmation); err != nil {
-		return err
-	}
-	if _, err := s.messages.Save(ctx, session.ID, "assistant", initialChatConfirmation, nil, nil); err != nil {
 		return err
 	}
 	return stream.Close()

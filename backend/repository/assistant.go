@@ -1,6 +1,9 @@
 package repository
 
-import "context"
+import (
+	"context"
+	"threadgpt/domain"
+)
 
 type StreamWriter interface {
 	Start(sessionID string) error
@@ -9,10 +12,8 @@ type StreamWriter interface {
 }
 
 type AssistantClient interface {
-	CreateAssistant(ctx context.Context, apiKey, instructions string) (string, error)
-	CreateThread(ctx context.Context, apiKey string) (string, error)
-	AddUserMessage(ctx context.Context, apiKey, threadID, content string) error
-	AddAssistantMessage(ctx context.Context, apiKey, threadID, content string) error
-	RunAndStream(ctx context.Context, apiKey, threadID, assistantID string, stream StreamWriter) (string, error)
-	UpdateAssistantInstructions(ctx context.Context, apiKey, assistantID, instructions string) error
+	CreateConversation(ctx context.Context, apiKey, systemPrompt string) (string, error)
+	ListMessages(ctx context.Context, apiKey, conversationID string) ([]domain.Message, error)
+	RunAndStream(ctx context.Context, apiKey, conversationID, userMessage string, stream StreamWriter) error
+	DeleteConversation(ctx context.Context, apiKey, conversationID string) error
 }

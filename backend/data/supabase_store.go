@@ -115,7 +115,7 @@ func (s *SupabaseStore) UpdateAssistant(ctx context.Context, sessionID, assistan
 }
 
 func (s *SupabaseStore) Delete(ctx context.Context, sessionID string) error {
-	if err := s.doRequest(ctx, http.MethodDelete, filterPath("messages", url.Values{
+	if err := s.doRequest(ctx, http.MethodDelete, filterPath("session_conversations", url.Values{
 		"session_id": {"eq." + sessionID},
 	}), nil, nil); err != nil {
 		return err
@@ -125,171 +125,59 @@ func (s *SupabaseStore) Delete(ctx context.Context, sessionID string) error {
 	}), nil, nil)
 }
 
-func (s *SupabaseStore) Save(ctx context.Context, sessionID, role, content string, openAIThreadID, parentMessageID *string) (*domain.Message, error) {
-	payload := map[string]any{
-		"session_id": sessionID,
-		"role":       role,
-		"content":    content,
-	}
-	if openAIThreadID != nil {
-		payload["openai_thread_id"] = *openAIThreadID
-	}
-	if parentMessageID != nil {
-		payload["parent_message_id"] = *parentMessageID
-	}
-
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodPost, "messages", payload, &messages)
+func (s *SupabaseStore) Create(ctx context.Context, sessionID, conversationID string) (*domain.ConversationRef, error) {
+	var refs []domain.ConversationRef
+	err := s.doRequest(ctx, http.MethodPost, "session_conversations", map[string]string{
+		"session_id":       sessionID,
+		"conversation_id":  conversationID,
+	}, &refs)
 	if err != nil {
 		return nil, err
 	}
-	if len(messages) == 0 {
+	if len(refs) == 0 {
 		return nil, domain.ErrInternal
 	}
-	return &messages[0], nil
+	return &refs[0], nil
 }
 
-func (s *SupabaseStore) GetMessageByID(ctx context.Context, messageID string) (*domain.Message, error) {
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"id":    {"eq." + messageID},
-		"limit": {"1"},
-	}), nil, &messages)
+func (s *SupabaseStore) GetByConversationID(ctx context.Context, conversationID string) (*domain.ConversationRef, error) {
+	var refs []domain.ConversationRef
+	err := s.doRequest(ctx, http.MethodGet, filterPath("session_conversations", url.Values{
+		"conversation_id": {"eq." + conversationID},
+		"limit":           {"1"},
+	}), nil, &refs)
 	if err != nil {
 		return nil, err
 	}
-	if len(messages) == 0 {
+	if len(refs) == 0 {
 		return nil, nil
 	}
-	return &messages[0], nil
+	return &refs[0], nil
 }
 
-func (s *SupabaseStore) GetMainAsc(ctx context.Context, sessionID string, limit, offset int) ([]domain.Message, error) {
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"session_id":        {"eq." + sessionID},
-		"parent_message_id": {"is.null"},
-		"order":             {"created_at.asc"},
-		"limit":             {fmt.Sprintf("%d", limit)},
-		"offset":            {fmt.Sprintf("%d", offset)},
-	}), nil, &messages)
+func (s *SupabaseStore) ListBySessionDesc(ctx context.Context, sessionID string, limit, offset int) ([]domain.ConversationRef, error) {
+	var refs []domain.ConversationRef
+	err := s.doRequest(ctx, http.MethodGet, filterPath("session_conversations", url.Values{
+		"session_id": {"eq." + sessionID},
+		"order":      {"created_at.desc"},
+		"limit":      {fmt.Sprintf("%d", limit)},
+		"offset":     {fmt.Sprintf("%d", offset)},
+	}), nil, &refs)
 	if err != nil {
 		return nil, err
 	}
-	return s.enrichReplyCounts(ctx, sessionID, messages)
+	reverse(refs)
+	return refs, nil
 }
 
-func (s *SupabaseStore) GetMainDesc(ctx context.Context, sessionID string, limit, offset int) ([]domain.Message, error) {
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"session_id":        {"eq." + sessionID},
-		"parent_message_id": {"is.null"},
-		"order":             {"created_at.desc"},
-		"limit":             {fmt.Sprintf("%d", limit)},
-		"offset":            {fmt.Sprintf("%d", offset)},
-	}), nil, &messages)
-	if err != nil {
-		return nil, err
-	}
-
-	reverse(messages)
-	return s.enrichReplyCounts(ctx, sessionID, messages)
-}
-
-func (s *SupabaseStore) GetThreadAsc(ctx context.Context, parentMessageID string, limit, offset int) ([]domain.Message, error) {
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"parent_message_id": {"eq." + parentMessageID},
-		"order":             {"created_at.asc"},
-		"limit":             {fmt.Sprintf("%d", limit)},
-		"offset":            {fmt.Sprintf("%d", offset)},
-	}), nil, &messages)
-	return messages, err
-}
-
-func (s *SupabaseStore) GetThreadDesc(ctx context.Context, parentMessageID string, limit, offset int) ([]domain.Message, error) {
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"parent_message_id": {"eq." + parentMessageID},
-		"order":             {"created_at.desc"},
-		"limit":             {fmt.Sprintf("%d", limit)},
-		"offset":            {fmt.Sprintf("%d", offset)},
-	}), nil, &messages)
-	if err != nil {
-		return nil, err
-	}
-	reverse(messages)
-	return messages, nil
-}
-
-func (s *SupabaseStore) GetBranchThreadID(ctx context.Context, parentMessageID string) (*string, error) {
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"parent_message_id": {"eq." + parentMessageID},
-		"openai_thread_id":  {"not.is.null"},
-		"order":             {"created_at.asc"},
-		"limit":             {"1"},
-	}), nil, &messages)
-	if err != nil {
-		return nil, err
-	}
-	if len(messages) == 0 || messages[0].OpenAIThreadID == nil {
-		return nil, nil
-	}
-	return messages[0].OpenAIThreadID, nil
-}
-
-func (s *SupabaseStore) FindFirstRootUserMessage(ctx context.Context, sessionID string) (*domain.Message, error) {
-	var messages []domain.Message
-	err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"session_id":        {"eq." + sessionID},
-		"role":              {"eq.user"},
-		"parent_message_id": {"is.null"},
-		"order":             {"created_at.asc"},
-		"limit":             {"1"},
-	}), nil, &messages)
-	if err != nil {
-		return nil, err
-	}
-	if len(messages) == 0 {
-		return nil, nil
-	}
-	return &messages[0], nil
-}
-
-func (s *SupabaseStore) UpdateContent(ctx context.Context, messageID, content string) error {
-	return s.doRequest(ctx, http.MethodPatch, filterPath("messages", url.Values{
-		"id": {"eq." + messageID},
-	}), map[string]string{"content": content}, nil)
-}
-
-func (s *SupabaseStore) enrichReplyCounts(ctx context.Context, sessionID string, messages []domain.Message) ([]domain.Message, error) {
-	if len(messages) == 0 {
-		return messages, nil
-	}
-
-	var threadMessages []domain.Message
-	if err := s.doRequest(ctx, http.MethodGet, filterPath("messages", url.Values{
-		"session_id":        {"eq." + sessionID},
-		"parent_message_id": {"not.is.null"},
-		"role":              {"eq.user"},
-	}), nil, &threadMessages); err != nil {
-		log.Printf("supabase reply count enrichment failed for session %s: %v", sessionID, err)
-		return messages, nil
-	}
-
-	counts := make(map[string]int)
-	for _, message := range threadMessages {
-		if message.ParentMessageID != nil {
-			counts[*message.ParentMessageID]++
-		}
-	}
-
-	for i := range messages {
-		messages[i].ReplyCount = counts[messages[i].ID]
-	}
-
-	return messages, nil
+func (s *SupabaseStore) ListBySessionAsc(ctx context.Context, sessionID string) ([]domain.ConversationRef, error) {
+	var refs []domain.ConversationRef
+	err := s.doRequest(ctx, http.MethodGet, filterPath("session_conversations", url.Values{
+		"session_id": {"eq." + sessionID},
+		"order":      {"created_at.asc"},
+		"limit":      {"10000"},
+	}), nil, &refs)
+	return refs, err
 }
 
 func (s *SupabaseStore) doRequest(ctx context.Context, method, path string, body any, result any) error {

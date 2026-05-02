@@ -9,14 +9,27 @@ import (
 const defaultMessagesLimit = 10
 const maxPaginationOffset = 10000
 
+type ConversationPreviewDTO struct {
+	ConversationID   string `json:"conversation_id"`
+	SessionID        string `json:"session_id"`
+	UserMessage      string `json:"user_message"`
+	AssistantMessage string `json:"assistant_message"`
+	ReplyCount       int    `json:"reply_count"`
+	CreatedAt        string `json:"created_at"`
+}
+
 type MessageDTO struct {
-	ID              string  `json:"id"`
-	SessionID       string  `json:"session_id"`
-	Role            string  `json:"role"`
-	Content         string  `json:"content"`
-	ParentMessageID *string `json:"parent_message_id"`
-	ReplyCount      int     `json:"reply_count"`
-	CreatedAt       string  `json:"created_at"`
+	ID         string `json:"id"`
+	SessionID  string `json:"session_id"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ReplyCount int    `json:"reply_count"`
+	CreatedAt  string `json:"created_at"`
+}
+
+type conversationsResponse struct {
+	Conversations []ConversationPreviewDTO `json:"conversations"`
+	HasMore       bool                     `json:"has_more"`
 }
 
 type messagesResponse struct {
@@ -41,15 +54,15 @@ func (a *Application) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, offset := parsePaginationParams(r, defaultMessagesLimit, maxPaginationOffset)
-	messages, err := a.history.Get(r.Context(), APIKeyHashFromContext(r.Context()), sessionID, limit, offset)
+	conversations, err := a.history.Get(r.Context(), APIKeyFromContext(r.Context()), APIKeyHashFromContext(r.Context()), sessionID, limit, offset)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, messagesResponse{
-		Messages: toMessageDTOs(messages),
-		HasMore:  len(messages) == limit,
+	writeJSON(w, http.StatusOK, conversationsResponse{
+		Conversations: toConversationPreviewDTOs(conversations),
+		HasMore:       len(conversations) == limit,
 	})
 }
 
@@ -70,13 +83,12 @@ func parsePaginationParams(r *http.Request, defaultLimit, maxOffset int) (limit,
 
 func toMessageDTO(message domain.Message) MessageDTO {
 	return MessageDTO{
-		ID:              message.ID,
-		SessionID:       message.SessionID,
-		Role:            message.Role,
-		Content:         message.Content,
-		ParentMessageID: message.ParentMessageID,
-		ReplyCount:      message.ReplyCount,
-		CreatedAt:       message.CreatedAt,
+		ID:         message.ID,
+		SessionID:  message.SessionID,
+		Role:       message.Role,
+		Content:    message.Content,
+		ReplyCount: message.ReplyCount,
+		CreatedAt:  message.CreatedAt,
 	}
 }
 
@@ -84,6 +96,25 @@ func toMessageDTOs(messages []domain.Message) []MessageDTO {
 	items := make([]MessageDTO, len(messages))
 	for i, message := range messages {
 		items[i] = toMessageDTO(message)
+	}
+	return items
+}
+
+func toConversationPreviewDTO(preview domain.ConversationPreview) ConversationPreviewDTO {
+	return ConversationPreviewDTO{
+		ConversationID:   preview.ConversationID,
+		SessionID:        preview.SessionID,
+		UserMessage:      preview.UserMessage,
+		AssistantMessage: preview.AssistantMessage,
+		ReplyCount:       preview.ReplyCount,
+		CreatedAt:        preview.CreatedAt,
+	}
+}
+
+func toConversationPreviewDTOs(previews []domain.ConversationPreview) []ConversationPreviewDTO {
+	items := make([]ConversationPreviewDTO, len(previews))
+	for i, preview := range previews {
+		items[i] = toConversationPreviewDTO(preview)
 	}
 	return items
 }

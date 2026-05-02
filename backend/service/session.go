@@ -7,16 +7,16 @@ import (
 )
 
 type SessionService struct {
-	sessions  repository.SessionRepository
-	messages  repository.MessageRepository
-	assistant repository.AssistantClient
+	sessions      repository.SessionRepository
+	conversations repository.ConversationRepository
+	assistant     repository.AssistantClient
 }
 
-func NewSessionService(sessions repository.SessionRepository, messages repository.MessageRepository, assistant repository.AssistantClient) *SessionService {
+func NewSessionService(sessions repository.SessionRepository, conversations repository.ConversationRepository, assistant repository.AssistantClient) *SessionService {
 	return &SessionService{
-		sessions:  sessions,
-		messages:  messages,
-		assistant: assistant,
+		sessions:      sessions,
+		conversations: conversations,
+		assistant:     assistant,
 	}
 }
 
@@ -46,9 +46,8 @@ func (s *SessionService) GetByID(ctx context.Context, apiKeyHash, sessionID stri
 	return session, nil
 }
 
-func (s *SessionService) Update(ctx context.Context, apiKey, apiKeyHash, sessionID, name, systemPrompt string) error {
-	session, err := s.GetByID(ctx, apiKeyHash, sessionID)
-	if err != nil {
+func (s *SessionService) Update(ctx context.Context, _ string, apiKeyHash, sessionID, name, systemPrompt string) error {
+	if _, err := s.GetByID(ctx, apiKeyHash, sessionID); err != nil {
 		return err
 	}
 
@@ -59,15 +58,7 @@ func (s *SessionService) Update(ctx context.Context, apiKey, apiKeyHash, session
 	}
 
 	if systemPrompt != "" {
-		if session.AssistantID != nil {
-			if err := s.assistant.UpdateAssistantInstructions(ctx, apiKey, *session.AssistantID, systemPrompt); err != nil {
-				return err
-			}
-		}
 		if err := s.sessions.SetSystemPrompt(ctx, sessionID, systemPrompt); err != nil {
-			return err
-		}
-		if err := s.syncFirstRootUserMessage(ctx, sessionID, systemPrompt); err != nil {
 			return err
 		}
 	}
@@ -75,20 +66,20 @@ func (s *SessionService) Update(ctx context.Context, apiKey, apiKeyHash, session
 	return nil
 }
 
-func (s *SessionService) Delete(ctx context.Context, apiKeyHash, sessionID string) error {
+func (s *SessionService) Delete(ctx context.Context, apiKey, apiKeyHash, sessionID string) error {
 	if _, err := s.GetByID(ctx, apiKeyHash, sessionID); err != nil {
 		return err
 	}
-	return s.sessions.Delete(ctx, sessionID)
-}
 
-func (s *SessionService) syncFirstRootUserMessage(ctx context.Context, sessionID, systemPrompt string) error {
-	firstMessage, err := s.messages.FindFirstRootUserMessage(ctx, sessionID)
+	refs, err := s.conversations.ListBySessionAsc(ctx, sessionID)
 	if err != nil {
 		return err
 	}
-	if firstMessage == nil {
-		return nil
+	for _, ref := range refs {
+		if err := s.assistant.DeleteConversation(ctx, apiKey, ref.ConversationID); err != nil {
+			return err
+		}
 	}
-	return s.messages.UpdateContent(ctx, firstMessage.ID, systemPrompt)
+
+	return s.sessions.Delete(ctx, sessionID)
 }

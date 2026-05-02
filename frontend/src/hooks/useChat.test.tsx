@@ -90,6 +90,7 @@ describe("useChat", () => {
       messages: [],
       hasMoreMessages: false,
       session: null,
+      loadedConversationCount: 0,
     })
 
     const { result } = renderHook(() => useChat(null))
@@ -109,6 +110,7 @@ describe("useChat", () => {
       hasMoreMessages: true,
       session: createSession({ session_id: "latest-1" }),
       resolvedSessionId: "latest-1",
+      loadedConversationCount: 1,
     })
 
     const onSessionResolved = vi.fn()
@@ -126,26 +128,24 @@ describe("useChat", () => {
   })
 
   it("resolves a new session after the first streamed message and refreshes history", async () => {
-    const history = {
-      messages: [
-        createMessage({
-          session_id: "new-session",
-          role: "user",
-          content: "Set the rules",
-        }),
-        createMessage({
-          session_id: "new-session",
-          role: "assistant",
-          content: "Rules set",
-        }),
-      ],
-      has_more: false,
-    }
+    const messages = [
+      createMessage({
+        session_id: "new-session",
+        role: "user",
+        content: "Set the rules",
+      }),
+      createMessage({
+        session_id: "new-session",
+        role: "assistant",
+        content: "Rules set",
+      }),
+    ]
 
     loadChatSession.mockResolvedValue({
       messages: [],
       hasMoreMessages: false,
       session: null,
+      loadedConversationCount: 0,
     })
     sendChatTurn.mockImplementation(
       async ({
@@ -157,7 +157,9 @@ describe("useChat", () => {
         onChunk(" set")
 
         return {
-          history,
+          messages,
+          hasMoreMessages: false,
+          loadedConversationCount: 1,
           session: createSession({ session_id: "new-session" }),
           resolvedSessionId: "new-session",
         }
@@ -175,7 +177,7 @@ describe("useChat", () => {
       await result.current.sendMessage("Set the rules")
     })
 
-    expect(buildOptimisticChatMessage).toHaveBeenCalledWith("Set the rules", undefined)
+    expect(buildOptimisticChatMessage).not.toHaveBeenCalled()
     expect(sendChatTurn).toHaveBeenCalledWith({
       content: "Set the rules",
       requestedSessionId: null,
@@ -194,6 +196,7 @@ describe("useChat", () => {
       messages: [createMessage({ session_id: "session-1", content: "Existing answer" })],
       hasMoreMessages: false,
       session: createSession({ session_id: "session-1" }),
+      loadedConversationCount: 1,
     })
 
     const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {

@@ -22,6 +22,7 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
 
   const [messages, setMessages] = useState<Message[]>([])
   const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  const [loadedConversationCount, setLoadedConversationCount] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
@@ -52,6 +53,7 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
         if (!cancelled) {
           setMessages(data.messages)
           setHasMoreMessages(data.hasMoreMessages)
+          setLoadedConversationCount(data.loadedConversationCount)
           setSession(data.session)
           if (data.resolvedSessionId) {
             onSessionResolvedRef.current?.(data.resolvedSessionId)
@@ -99,9 +101,10 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
     try {
       // Backend returns desc (newest first, then reversed to asc). offset from newest end.
       // We already have `messages.length` newest messages; fetch the next older batch.
-      const historyData = await loadOlderChatMessages(activeSessionId, messages.length)
+      const historyData = await loadOlderChatMessages(session ?? { session_id: activeSessionId }, loadedConversationCount)
       setMessages((prev) => [...historyData.messages, ...prev])
       setHasMoreMessages(historyData.has_more)
+      setLoadedConversationCount((prev) => prev + historyData.loadedConversationCount)
       // Preserve scroll position after prepend
       if (el) {
         requestAnimationFrame(() => {
@@ -117,7 +120,7 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
     } finally {
       setLoadingMore(false)
     }
-  }, [sessionId, session, messages.length, loadingMore, hasMoreMessages])
+  }, [sessionId, session, loadedConversationCount, loadingMore, hasMoreMessages])
 
   const loadAllMessages = useCallback(async (scrollEl?: HTMLDivElement | null) => {
     const activeSessionId = sessionId || session?.session_id
@@ -135,9 +138,10 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
 
     setLoadingMore(true)
     try {
-      const historyData = await loadCompleteChatHistory(activeSessionId)
+      const historyData = await loadCompleteChatHistory(session ?? { session_id: activeSessionId })
       setMessages(historyData.messages)
       setHasMoreMessages(false)
+      setLoadedConversationCount(historyData.loadedConversationCount)
       if (el) {
         requestAnimationFrame(() => {
           el.scrollTop = 0
@@ -158,8 +162,11 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
     const controller = new AbortController()
     sendAbortRef.current = controller
 
-    const userMsg: Message = buildOptimisticChatMessage(content, session?.session_id)
-    setMessages((prev) => [...prev, userMsg])
+    const firstMessageSession = !session?.system_prompt
+    if (!firstMessageSession) {
+      const userMsg: Message = buildOptimisticChatMessage(content, session?.session_id)
+      setMessages((prev) => [...prev, userMsg])
+    }
     setStreamingContent("")
 
     try {
@@ -177,8 +184,9 @@ export function useChat(sessionId?: string | null, onSessionResolved?: (sessionI
 
       if (controller.signal.aborted) return
 
-      setMessages(result.history.messages)
-      setHasMoreMessages(result.history.has_more)
+      setMessages(result.messages)
+      setHasMoreMessages(result.hasMoreMessages)
+      setLoadedConversationCount(result.loadedConversationCount)
       setStreamingContent("")
       setSession(result.session)
 

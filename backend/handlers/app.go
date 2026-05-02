@@ -52,7 +52,7 @@ func NewDefaultApplication() *Application {
 	return NewApplication(Dependencies{
 		Auth:     auth,
 		Chat:     service.NewChatService(store, store, assistant),
-		History:  service.NewHistoryService(store, store),
+		History:  service.NewHistoryService(store, store, assistant),
 		Sessions: service.NewSessionService(store, store, assistant),
 		Threads:  service.NewThreadService(store, store, assistant),
 	})

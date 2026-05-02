@@ -21,7 +21,7 @@ const (
 	otherUserHash = "other-user-hash"
 )
 
-func TestHandleChat_FirstMessageCreatesAssistantSessionAndConfirmation(t *testing.T) {
+func TestHandleChat_FirstMessageStoresSystemPromptOnly(t *testing.T) {
 	state := newFakeSupabaseState()
 	server := state.newServer()
 	defer server.Close()
@@ -29,32 +29,21 @@ func TestHandleChat_FirstMessageCreatesAssistantSessionAndConfirmation(t *testin
 	t.Setenv("SUPABASE_URL", server.URL)
 	t.Setenv("SUPABASE_SERVICE_KEY", "test-service-key")
 
-	restore := mockOpenAITransport(t, func(req *http.Request) (*http.Response, error) {
-		if req.Method == http.MethodPost && req.URL.Path == "/v1/assistants" {
-			return jsonHTTPResponse(http.StatusOK, map[string]string{"id": "assistant-1"}), nil
-		}
-		t.Fatalf("unexpected OpenAI request: %s %s", req.Method, req.URL.Path)
-		return nil, nil
-	})
-	defer restore()
-
 	body := bytes.NewBufferString(`{"user_message":"You are a concise assistant","force_new":true}`)
 	req := newAuthedRequest(t, http.MethodPost, "/api/chat", body, testUserHash)
 	rec := httptest.NewRecorder()
 
 	HandleChat(rec, req)
 
-	resp := rec.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
-
 	payload := rec.Body.String()
 	if !strings.Contains(payload, `"session_id":"00000000-0000-0000-0000-000000000001"`) {
 		t.Fatalf("expected session id in SSE payload, got %q", payload)
 	}
 	if !strings.Contains(payload, "Context set!") {
-		t.Fatalf("expected confirmation message in SSE payload, got %q", payload)
+		t.Fatalf("expected confirmation chunk in SSE payload, got %q", payload)
 	}
 	if !strings.Contains(payload, "data: [DONE]") {
 		t.Fatalf("expected DONE event in SSE payload, got %q", payload)
@@ -64,36 +53,22 @@ func TestHandleChat_FirstMessageCreatesAssistantSessionAndConfirmation(t *testin
 	if len(snapshot.sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(snapshot.sessions))
 	}
-	session := snapshot.sessions[0]
-	if session.APIKeyHash != testUserHash {
-		t.Fatalf("expected session owner %q, got %q", testUserHash, session.APIKeyHash)
+	if snapshot.sessions[0].SystemPrompt == nil || *snapshot.sessions[0].SystemPrompt != "You are a concise assistant" {
+		t.Fatalf("expected system prompt to be saved, got %+v", snapshot.sessions[0].SystemPrompt)
 	}
-	if session.AssistantID == nil || *session.AssistantID != "assistant-1" {
-		t.Fatalf("expected assistant id to be saved, got %+v", session.AssistantID)
-	}
-	if session.SystemPrompt == nil || *session.SystemPrompt != "You are a concise assistant" {
-		t.Fatalf("expected system prompt to be saved, got %+v", session.SystemPrompt)
-	}
-
-	if len(snapshot.messages) != 2 {
-		t.Fatalf("expected 2 saved messages, got %d", len(snapshot.messages))
-	}
-	if snapshot.messages[0].Role != "user" || snapshot.messages[0].Content != "You are a concise assistant" {
-		t.Fatalf("unexpected first message: %+v", snapshot.messages[0])
-	}
-	if snapshot.messages[1].Role != "assistant" || !strings.Contains(snapshot.messages[1].Content, "Context set!") {
-		t.Fatalf("unexpected assistant confirmation message: %+v", snapshot.messages[1])
+	if len(snapshot.conversations) != 0 {
+		t.Fatalf("expected no stored conversations for initial setup, got %d", len(snapshot.conversations))
 	}
 }
 
-func TestHandleChat_ExistingSessionStreamsAssistantReply(t *testing.T) {
-	assistantID := "assistant-1"
+func TestHandleChat_ExistingSessionCreatesConversationAndStreamsReply(t *testing.T) {
+	prompt := "You are concise"
 	state := newFakeSupabaseState()
 	state.sessions = append(state.sessions, domain.Session{
-		ID:          validUUID(1),
-		APIKeyHash:  testUserHash,
-		AssistantID: &assistantID,
-		CreatedAt:   state.nextTimestamp(),
+		ID:           validUUID(1),
+		APIKeyHash:   testUserHash,
+		SystemPrompt: &prompt,
+		CreatedAt:    state.nextTimestamp(),
 	})
 	server := state.newServer()
 	defer server.Close()
@@ -103,15 +78,13 @@ func TestHandleChat_ExistingSessionStreamsAssistantReply(t *testing.T) {
 
 	restore := mockOpenAITransport(t, func(req *http.Request) (*http.Response, error) {
 		switch {
-		case req.Method == http.MethodPost && req.URL.Path == "/v1/threads":
-			return jsonHTTPResponse(http.StatusOK, map[string]string{"id": "thread-1"}), nil
-		case req.Method == http.MethodPost && req.URL.Path == "/v1/threads/thread-1/messages":
-			return jsonHTTPResponse(http.StatusOK, map[string]any{"ok": true}), nil
-		case req.Method == http.MethodPost && req.URL.Path == "/v1/threads/thread-1/runs":
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/conversations":
+			return jsonHTTPResponse(http.StatusOK, map[string]string{"id": "conv-1"}), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/responses":
 			return sseHTTPResponse(strings.Join([]string{
-				`data: {"object":"thread.message.delta","delta":{"content":[{"type":"text","text":{"value":"Hello"}}]}}`,
+				`data: {"type":"response.output_text.delta","delta":"Hello"}`,
 				``,
-				`data: {"object":"thread.message.delta","delta":{"content":[{"type":"text","text":{"value":" there"}}]}}`,
+				`data: {"type":"response.output_text.delta","delta":" there"}`,
 				``,
 				`data: [DONE]`,
 				``,
@@ -129,31 +102,20 @@ func TestHandleChat_ExistingSessionStreamsAssistantReply(t *testing.T) {
 
 	HandleChat(rec, req)
 
-	resp := rec.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
-
 	payload := rec.Body.String()
-	if !strings.Contains(payload, `"session_id":"00000000-0000-0000-0000-000000000001"`) {
-		t.Fatalf("expected session id in stream, got %q", payload)
-	}
 	if !strings.Contains(payload, `"chunk":"Hello"`) || !strings.Contains(payload, `"chunk":" there"`) {
 		t.Fatalf("expected assistant chunks in stream, got %q", payload)
 	}
-	if !strings.Contains(payload, "data: [DONE]") {
-		t.Fatalf("expected DONE event in stream, got %q", payload)
-	}
 
 	snapshot := state.snapshot()
-	if len(snapshot.messages) != 2 {
-		t.Fatalf("expected 2 saved messages, got %d", len(snapshot.messages))
+	if len(snapshot.conversations) != 1 {
+		t.Fatalf("expected 1 stored conversation, got %d", len(snapshot.conversations))
 	}
-	if snapshot.messages[0].Role != "user" || snapshot.messages[0].OpenAIThreadID == nil || *snapshot.messages[0].OpenAIThreadID != "thread-1" {
-		t.Fatalf("unexpected saved user message: %+v", snapshot.messages[0])
-	}
-	if snapshot.messages[1].Role != "assistant" || snapshot.messages[1].Content != "Hello there" {
-		t.Fatalf("unexpected saved assistant message: %+v", snapshot.messages[1])
+	if snapshot.conversations[0].ConversationID != "conv-1" {
+		t.Fatalf("expected stored conversation id conv-1, got %+v", snapshot.conversations[0])
 	}
 }
 
@@ -181,39 +143,20 @@ func TestHandleHistory_WithForeignSessionReturnsForbidden(t *testing.T) {
 	}
 }
 
-func TestHandleSessionByID_PatchUpdatesAssistantAndSystemPrompt(t *testing.T) {
-	assistantID := "assistant-1"
+func TestHandleSessionByID_PatchUpdatesSystemPrompt(t *testing.T) {
 	initialPrompt := "Old prompt"
 	state := newFakeSupabaseState()
 	state.sessions = append(state.sessions, domain.Session{
 		ID:           validUUID(1),
 		APIKeyHash:   testUserHash,
-		AssistantID:  &assistantID,
 		SystemPrompt: &initialPrompt,
 		CreatedAt:    state.nextTimestamp(),
 	})
-	state.messages = append(state.messages, domain.Message{
-		ID:        validUUID(101),
-		SessionID: validUUID(1),
-		Role:      "user",
-		Content:   initialPrompt,
-		CreatedAt: state.nextTimestamp(),
-	})
-
 	server := state.newServer()
 	defer server.Close()
 
 	t.Setenv("SUPABASE_URL", server.URL)
 	t.Setenv("SUPABASE_SERVICE_KEY", "test-service-key")
-
-	restore := mockOpenAITransport(t, func(req *http.Request) (*http.Response, error) {
-		if req.Method == http.MethodPost && req.URL.Path == "/v1/assistants/assistant-1" {
-			return jsonHTTPResponse(http.StatusOK, map[string]any{"ok": true}), nil
-		}
-		t.Fatalf("unexpected OpenAI request: %s %s", req.Method, req.URL.Path)
-		return nil, nil
-	})
-	defer restore()
 
 	body := bytes.NewBufferString(`{"system_prompt":"New prompt"}`)
 	req := newAuthedRequest(t, http.MethodPatch, "/api/sessions/"+validUUID(1), body, testUserHash)
@@ -229,8 +172,53 @@ func TestHandleSessionByID_PatchUpdatesAssistantAndSystemPrompt(t *testing.T) {
 	if snapshot.sessions[0].SystemPrompt == nil || *snapshot.sessions[0].SystemPrompt != "New prompt" {
 		t.Fatalf("expected system prompt update, got %+v", snapshot.sessions[0].SystemPrompt)
 	}
-	if snapshot.messages[0].Content != "New prompt" {
-		t.Fatalf("expected first user message to reflect new system prompt, got %q", snapshot.messages[0].Content)
+}
+
+func TestHandleThread_StreamsReplyAgainstStoredConversation(t *testing.T) {
+	prompt := "You are concise"
+	state := newFakeSupabaseState()
+	state.sessions = append(state.sessions, domain.Session{
+		ID:           validUUID(1),
+		APIKeyHash:   testUserHash,
+		SystemPrompt: &prompt,
+		CreatedAt:    state.nextTimestamp(),
+	})
+	state.conversations = append(state.conversations, domain.ConversationRef{
+		ConversationID: "conv-1",
+		SessionID:      validUUID(1),
+		CreatedAt:      state.nextTimestamp(),
+	})
+	server := state.newServer()
+	defer server.Close()
+
+	t.Setenv("SUPABASE_URL", server.URL)
+	t.Setenv("SUPABASE_SERVICE_KEY", "test-service-key")
+
+	restore := mockOpenAITransport(t, func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodPost && req.URL.Path == "/v1/responses" {
+			return sseHTTPResponse(strings.Join([]string{
+				`data: {"type":"response.output_text.delta","delta":"Follow-up"}`,
+				``,
+				`data: [DONE]`,
+				``,
+			}, "\n")), nil
+		}
+		t.Fatalf("unexpected OpenAI request: %s %s", req.Method, req.URL.Path)
+		return nil, nil
+	})
+	defer restore()
+
+	body := bytes.NewBufferString(`{"conversation_id":"conv-1","user_message":"Continue"}`)
+	req := newAuthedRequest(t, http.MethodPost, "/api/thread", body, testUserHash)
+	rec := httptest.NewRecorder()
+
+	HandleThread(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"chunk":"Follow-up"`) {
+		t.Fatalf("expected streamed follow-up chunk, got %q", rec.Body.String())
 	}
 }
 
@@ -280,23 +268,21 @@ func sseHTTPResponse(body string) *http.Response {
 }
 
 type fakeSupabaseSnapshot struct {
-	sessions []domain.Session
-	messages []domain.Message
+	sessions      []domain.Session
+	conversations []domain.ConversationRef
 }
 
 type fakeSupabaseState struct {
-	mu          sync.Mutex
-	sessions    []domain.Session
-	messages    []domain.Message
-	nextSession int
-	nextMessage int
-	nextCreated int
+	mu            sync.Mutex
+	sessions      []domain.Session
+	conversations []domain.ConversationRef
+	nextSession   int
+	nextCreated   int
 }
 
 func newFakeSupabaseState() *fakeSupabaseState {
 	return &fakeSupabaseState{
 		nextSession: 1,
-		nextMessage: 1,
 	}
 }
 
@@ -305,8 +291,8 @@ func (s *fakeSupabaseState) newServer() *httptest.Server {
 		switch strings.TrimPrefix(r.URL.Path, "/rest/v1/") {
 		case "sessions":
 			s.handleSessions(w, r)
-		case "messages":
-			s.handleMessages(w, r)
+		case "session_conversations":
+			s.handleConversations(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -379,42 +365,37 @@ func (s *fakeSupabaseState) handleSessions(w http.ResponseWriter, r *http.Reques
 		}
 		w.WriteHeader(http.StatusNoContent)
 
+	case http.MethodDelete:
+		id := strings.TrimPrefix(r.URL.Query().Get("id"), "eq.")
+		var kept []domain.Session
+		for _, session := range s.sessions {
+			if session.ID != id {
+				kept = append(kept, session)
+			}
+		}
+		s.sessions = kept
+		w.WriteHeader(http.StatusNoContent)
+
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *fakeSupabaseState) handleMessages(w http.ResponseWriter, r *http.Request) {
+func (s *fakeSupabaseState) handleConversations(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	switch r.Method {
 	case http.MethodGet:
-		items := append([]domain.Message(nil), s.messages...)
+		items := append([]domain.ConversationRef(nil), s.conversations...)
 		q := r.URL.Query()
 
-		if id := strings.TrimPrefix(q.Get("id"), "eq."); id != "" {
-			items = filterMessages(items, func(item domain.Message) bool { return item.ID == id })
+		if id := strings.TrimPrefix(q.Get("conversation_id"), "eq."); id != "" {
+			items = filterConversationRefs(items, func(item domain.ConversationRef) bool { return item.ConversationID == id })
 		}
 		if sessionID := strings.TrimPrefix(q.Get("session_id"), "eq."); sessionID != "" {
-			items = filterMessages(items, func(item domain.Message) bool { return item.SessionID == sessionID })
+			items = filterConversationRefs(items, func(item domain.ConversationRef) bool { return item.SessionID == sessionID })
 		}
-		switch parent := q.Get("parent_message_id"); parent {
-		case "is.null":
-			items = filterMessages(items, func(item domain.Message) bool { return item.ParentMessageID == nil })
-		case "not.is.null":
-			items = filterMessages(items, func(item domain.Message) bool { return item.ParentMessageID != nil })
-		default:
-			if id := strings.TrimPrefix(parent, "eq."); id != "" {
-				items = filterMessages(items, func(item domain.Message) bool {
-					return item.ParentMessageID != nil && *item.ParentMessageID == id
-				})
-			}
-		}
-		if role := strings.TrimPrefix(q.Get("role"), "eq."); role != "" {
-			items = filterMessages(items, func(item domain.Message) bool { return item.Role == role })
-		}
-
 		if q.Get("order") == "created_at.desc" {
 			sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt > items[j].CreatedAt })
 		} else {
@@ -424,39 +405,26 @@ func (s *fakeSupabaseState) handleMessages(w http.ResponseWriter, r *http.Reques
 		writeTestJSON(w, applyWindow(items, q.Get("limit"), q.Get("offset")))
 
 	case http.MethodPost:
-		var payload map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&payload)
-
-		message := domain.Message{
-			ID:        validUUID(100 + s.nextMessage),
-			SessionID: stringValue(payload["session_id"]),
-			Role:      stringValue(payload["role"]),
-			Content:   stringValue(payload["content"]),
-			CreatedAt: s.nextTimestamp(),
-		}
-		s.nextMessage++
-		if v := stringValue(payload["openai_thread_id"]); v != "" {
-			message.OpenAIThreadID = stringPtr(v)
-		}
-		if v := stringValue(payload["parent_message_id"]); v != "" {
-			message.ParentMessageID = stringPtr(v)
-		}
-		s.messages = append(s.messages, message)
-		writeTestJSON(w, []domain.Message{message})
-
-	case http.MethodPatch:
-		id := strings.TrimPrefix(r.URL.Query().Get("id"), "eq.")
 		var payload map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 
-		for i := range s.messages {
-			if s.messages[i].ID != id {
-				continue
-			}
-			if v, ok := payload["content"]; ok {
-				s.messages[i].Content = v
+		ref := domain.ConversationRef{
+			ConversationID: payload["conversation_id"],
+			SessionID:      payload["session_id"],
+			CreatedAt:      s.nextTimestamp(),
+		}
+		s.conversations = append(s.conversations, ref)
+		writeTestJSON(w, []domain.ConversationRef{ref})
+
+	case http.MethodDelete:
+		sessionID := strings.TrimPrefix(r.URL.Query().Get("session_id"), "eq.")
+		var kept []domain.ConversationRef
+		for _, ref := range s.conversations {
+			if ref.SessionID != sessionID {
+				kept = append(kept, ref)
 			}
 		}
+		s.conversations = kept
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
@@ -469,8 +437,8 @@ func (s *fakeSupabaseState) snapshot() fakeSupabaseSnapshot {
 	defer s.mu.Unlock()
 
 	return fakeSupabaseSnapshot{
-		sessions: append([]domain.Session(nil), s.sessions...),
-		messages: append([]domain.Message(nil), s.messages...),
+		sessions:      append([]domain.Session(nil), s.sessions...),
+		conversations: append([]domain.ConversationRef(nil), s.conversations...),
 	}
 }
 
@@ -491,8 +459,8 @@ func filterSessions(items []domain.Session, keep func(domain.Session) bool) []do
 	return filtered
 }
 
-func filterMessages(items []domain.Message, keep func(domain.Message) bool) []domain.Message {
-	var filtered []domain.Message
+func filterConversationRefs(items []domain.ConversationRef, keep func(domain.ConversationRef) bool) []domain.ConversationRef {
+	var filtered []domain.ConversationRef
 	for _, item := range items {
 		if keep(item) {
 			filtered = append(filtered, item)
@@ -531,11 +499,6 @@ func applyWindow[T any](items []T, limitRaw, offsetRaw string) []T {
 func writeTestJSON(w http.ResponseWriter, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
-}
-
-func stringValue(v any) string {
-	s, _ := v.(string)
-	return s
 }
 
 func stringPtr(v string) *string {

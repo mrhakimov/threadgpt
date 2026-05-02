@@ -7,8 +7,8 @@ import (
 )
 
 type ThreadRequest struct {
-	ParentMessageID string `json:"parent_message_id"`
-	UserMessage     string `json:"user_message"`
+	ConversationID string `json:"conversation_id"`
+	UserMessage    string `json:"user_message"`
 }
 
 func HandleThread(w http.ResponseWriter, r *http.Request) {
@@ -27,16 +27,12 @@ func (a *Application) HandleThread(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	var req ThreadRequest
-	if err := decodeJSON(r, &req); err != nil || req.ParentMessageID == "" || req.UserMessage == "" {
+	if err := decodeJSON(r, &req); err != nil || req.ConversationID == "" || req.UserMessage == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	if len(req.UserMessage) > 32*1024 {
 		http.Error(w, "message too long", http.StatusBadRequest)
-		return
-	}
-	if !isValidUUID(req.ParentMessageID) {
-		http.Error(w, "invalid parent_message_id", http.StatusBadRequest)
 		return
 	}
 
@@ -47,10 +43,10 @@ func (a *Application) HandleThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := a.threads.Reply(r.Context(), service.ThreadRequest{
-		APIKey:          APIKeyFromContext(r.Context()),
-		APIKeyHash:      apiKeyHash,
-		ParentMessageID: req.ParentMessageID,
-		UserMessage:     req.UserMessage,
+		APIKey:         APIKeyFromContext(r.Context()),
+		APIKeyHash:     apiKeyHash,
+		ConversationID: req.ConversationID,
+		UserMessage:    req.UserMessage,
 	}, newSSEStreamWriter(w))
 	if err != nil {
 		writeServiceError(w, err)
@@ -58,18 +54,14 @@ func (a *Application) HandleThread(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Application) handleGetThread(w http.ResponseWriter, r *http.Request) {
-	parentMessageID := r.URL.Query().Get("parent_message_id")
-	if parentMessageID == "" {
-		http.Error(w, "missing parent_message_id", http.StatusBadRequest)
-		return
-	}
-	if !isValidUUID(parentMessageID) {
-		http.Error(w, "invalid parent_message_id", http.StatusBadRequest)
+	conversationID := r.URL.Query().Get("conversation_id")
+	if conversationID == "" {
+		http.Error(w, "missing conversation_id", http.StatusBadRequest)
 		return
 	}
 
 	limit, offset := parsePaginationParams(r, defaultMessagesLimit, maxPaginationOffset)
-	messages, err := a.threads.Get(r.Context(), APIKeyHashFromContext(r.Context()), parentMessageID, limit, offset)
+	messages, err := a.threads.Get(r.Context(), APIKeyFromContext(r.Context()), APIKeyHashFromContext(r.Context()), conversationID, limit, offset)
 	if err != nil {
 		writeServiceError(w, err)
 		return

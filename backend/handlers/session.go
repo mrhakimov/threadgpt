@@ -159,7 +159,7 @@ func (a *Application) HandleSessionByID(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodDelete:
-		if err := a.sessions.Delete(r.Context(), apiKeyHash, sessionID); err != nil {
+		if err := a.sessions.Delete(r.Context(), APIKeyFromContext(r.Context()), apiKeyHash, sessionID); err != nil {
 			writeServiceError(w, err)
 			return
 		}

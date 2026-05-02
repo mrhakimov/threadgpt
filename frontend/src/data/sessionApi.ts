@@ -1,4 +1,4 @@
-import type { HistoryPage, Session } from "@/domain/entities/chat"
+import type { ConversationHistoryPage, Session } from "@/domain/entities/chat"
 import { MESSAGE_PAGE_SIZE, SESSION_PAGE_SIZE } from "@/domain/constants"
 import { API_URL, JSON_HEADERS, requestJson, requestVoid } from "@/data/http/client"
 
@@ -70,7 +70,7 @@ export async function fetchHistory(
   sessionId?: string,
   limit = MESSAGE_PAGE_SIZE,
   offset = 0,
-): Promise<HistoryPage> {
+): Promise<ConversationHistoryPage> {
   const headers: Record<string, string> = {}
   if (sessionId) {
     headers["X-Session-ID"] = sessionId

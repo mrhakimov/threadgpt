@@ -12,15 +12,11 @@ CREATE TABLE sessions (
 
 CREATE INDEX sessions_api_key_hash_idx ON sessions (api_key_hash);
 
-CREATE TABLE messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id UUID REFERENCES sessions(id),
-  role TEXT NOT NULL,
-  content TEXT NOT NULL,
-  openai_thread_id TEXT,
-  parent_message_id UUID REFERENCES messages(id),
+CREATE TABLE session_conversations (
+  conversation_id TEXT PRIMARY KEY,
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE session_conversations ENABLE ROW LEVEL SECURITY;

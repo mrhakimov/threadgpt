@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"threadgpt/domain"
 	"threadgpt/repository"
@@ -28,77 +29,113 @@ func NewOpenAIClient() *OpenAIClient {
 	}
 }
 
-func (c *OpenAIClient) CreateAssistant(ctx context.Context, apiKey, instructions string) (string, error) {
+func (c *OpenAIClient) CreateConversation(ctx context.Context, apiKey, systemPrompt string) (string, error) {
+	payload := map[string]any{}
+	if strings.TrimSpace(systemPrompt) != "" {
+		payload["items"] = []map[string]any{
+			{
+				"type":    "message",
+				"role":    "developer",
+				"content": systemPrompt,
+			},
+		}
+	}
+
 	var result struct {
 		ID string `json:"id"`
 	}
-
-	err := c.doRequest(ctx, apiKey, http.MethodPost, "/assistants", map[string]any{
-		"model":        "gpt-4o",
-		"instructions": instructions,
-		"name":         "ThreadGPT Assistant",
-	}, &result)
+	err := c.doRequest(ctx, apiKey, http.MethodPost, "/conversations", payload, &result)
 	return result.ID, err
 }
 
-func (c *OpenAIClient) CreateThread(ctx context.Context, apiKey string) (string, error) {
-	var result struct {
-		ID string `json:"id"`
+func (c *OpenAIClient) ListMessages(ctx context.Context, apiKey, conversationID string) ([]domain.Message, error) {
+	var messages []domain.Message
+	var after string
+
+	for {
+		params := url.Values{
+			"order": {"asc"},
+			"limit": {"100"},
+		}
+		if after != "" {
+			params.Set("after", after)
+		}
+
+		var result struct {
+			Data    []conversationItem `json:"data"`
+			HasMore bool               `json:"has_more"`
+			LastID  string             `json:"last_id"`
+		}
+		if err := c.doRequest(ctx, apiKey, http.MethodGet, "/conversations/"+conversationID+"/items?"+params.Encode(), nil, &result); err != nil {
+			return nil, err
+		}
+
+		for _, item := range result.Data {
+			if item.Type != "message" {
+				continue
+			}
+			if item.Role != "user" && item.Role != "assistant" {
+				continue
+			}
+
+			messages = append(messages, domain.Message{
+				ID:        item.ID,
+				Role:      item.Role,
+				Content:   item.textContent(),
+				CreatedAt: formatUnixTimestamp(item.CreatedAt),
+			})
+		}
+
+		if !result.HasMore || result.LastID == "" {
+			break
+		}
+		after = result.LastID
 	}
 
-	err := c.doRequest(ctx, apiKey, http.MethodPost, "/threads", map[string]any{}, &result)
-	return result.ID, err
+	return messages, nil
 }
 
-func (c *OpenAIClient) AddUserMessage(ctx context.Context, apiKey, threadID, content string) error {
-	return c.doRequest(ctx, apiKey, http.MethodPost, "/threads/"+threadID+"/messages", map[string]any{
-		"role":    "user",
-		"content": content,
-	}, nil)
-}
-
-func (c *OpenAIClient) AddAssistantMessage(ctx context.Context, apiKey, threadID, content string) error {
-	return c.doRequest(ctx, apiKey, http.MethodPost, "/threads/"+threadID+"/messages", map[string]any{
-		"role":    "assistant",
-		"content": content,
-	}, nil)
-}
-
-func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, threadID, assistantID string, stream repository.StreamWriter) (string, error) {
+func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage string, stream repository.StreamWriter) error {
 	payload, err := json.Marshal(map[string]any{
-		"assistant_id": assistantID,
-		"stream":       true,
+		"model":        "gpt-4o",
+		"conversation": conversationID,
+		"input": []map[string]any{
+			{
+				"role":    "user",
+				"content": userMessage,
+			},
+		},
+		"stream": true,
 	})
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(runCtx, http.MethodPost, openAIBaseURL+"/threads/"+threadID+"/runs", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(runCtx, http.MethodPost, openAIBaseURL+"/responses", bytes.NewReader(payload))
 	if err != nil {
-		return "", err
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("OpenAI-Beta", "assistants=v2")
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := c.streamClient.Do(req)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		log.Printf("openai stream error %d on POST /threads/.../runs", resp.StatusCode)
-		return "", domain.ErrInternal
+		log.Printf("openai stream error %d on POST /responses", resp.StatusCode)
+		return domain.ErrInternal
 	}
 
-	var fullText strings.Builder
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -115,50 +152,60 @@ func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, threadID, assis
 			continue
 		}
 
-		objectType, _ := event["object"].(string)
-		if objectType != "thread.message.delta" {
-			continue
-		}
-
-		delta, ok := event["delta"].(map[string]any)
-		if !ok {
-			continue
-		}
-		contentItems, ok := delta["content"].([]any)
-		if !ok {
-			continue
-		}
-		for _, item := range contentItems {
-			contentMap, ok := item.(map[string]any)
-			if !ok || contentMap["type"] != "text" {
-				continue
-			}
-			textMap, ok := contentMap["text"].(map[string]any)
-			if !ok {
-				continue
-			}
-			chunk, _ := textMap["value"].(string)
+		eventType, _ := event["type"].(string)
+		switch eventType {
+		case "response.output_text.delta":
+			chunk, _ := event["delta"].(string)
 			if chunk == "" {
 				continue
 			}
-			fullText.WriteString(chunk)
 			if err := stream.WriteChunk(chunk); err != nil {
-				return fullText.String(), err
+				return err
 			}
+		case "error":
+			log.Printf("openai response stream returned error event")
+			return domain.ErrInternal
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fullText.String(), err
+		return err
 	}
 
-	return fullText.String(), nil
+	return nil
 }
 
-func (c *OpenAIClient) UpdateAssistantInstructions(ctx context.Context, apiKey, assistantID, instructions string) error {
-	return c.doRequest(ctx, apiKey, http.MethodPost, "/assistants/"+assistantID, map[string]any{
-		"instructions": instructions,
-	}, nil)
+func (c *OpenAIClient) DeleteConversation(ctx context.Context, apiKey, conversationID string) error {
+	return c.doRequest(ctx, apiKey, http.MethodDelete, "/conversations/"+conversationID, nil, nil)
+}
+
+type conversationItem struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"`
+	Role      string `json:"role"`
+	CreatedAt int64  `json:"created_at"`
+	Content   []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+}
+
+func (i conversationItem) textContent() string {
+	var b strings.Builder
+	for _, part := range i.Content {
+		switch part.Type {
+		case "input_text", "output_text":
+			b.WriteString(part.Text)
+		}
+	}
+	return b.String()
+}
+
+func formatUnixTimestamp(ts int64) string {
+	if ts <= 0 {
+		return ""
+	}
+	return time.Unix(ts, 0).UTC().Format(time.RFC3339)
 }
 
 func (c *OpenAIClient) doRequest(ctx context.Context, apiKey, method, path string, body any, result any) error {
@@ -177,7 +224,6 @@ func (c *OpenAIClient) doRequest(ctx context.Context, apiKey, method, path strin
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("OpenAI-Beta", "assistants=v2")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -190,10 +236,13 @@ func (c *OpenAIClient) doRequest(ctx context.Context, apiKey, method, path strin
 		return err
 	}
 	if resp.StatusCode >= 400 {
-		log.Printf("openai error %d on %s %s", resp.StatusCode, method, path)
+		log.Printf("openai error %d on %s %s: %s", resp.StatusCode, method, path, truncateForLog(respBody))
 		return domain.ErrInternal
 	}
 	if result != nil {
+		if len(respBody) == 0 {
+			return nil
+		}
 		return json.Unmarshal(respBody, result)
 	}
 	return nil
