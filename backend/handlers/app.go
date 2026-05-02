@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,20 +13,26 @@ import (
 	"threadgpt/service"
 )
 
+type APIKeyValidator interface {
+	ValidateAPIKey(ctx context.Context, apiKey string) error
+}
+
 type Dependencies struct {
-	Auth     *service.AuthService
-	Chat     *service.ChatService
-	History  *service.HistoryService
-	Sessions *service.SessionService
-	Threads  *service.ThreadService
+	Auth         *service.AuthService
+	Chat         *service.ChatService
+	History      *service.HistoryService
+	Sessions     *service.SessionService
+	Threads      *service.ThreadService
+	KeyValidator APIKeyValidator
 }
 
 type Application struct {
-	auth     *service.AuthService
-	chat     *service.ChatService
-	history  *service.HistoryService
-	sessions *service.SessionService
-	threads  *service.ThreadService
+	auth         *service.AuthService
+	chat         *service.ChatService
+	history      *service.HistoryService
+	sessions     *service.SessionService
+	threads      *service.ThreadService
+	keyValidator APIKeyValidator
 }
 
 var (
@@ -36,11 +43,12 @@ var (
 
 func NewApplication(deps Dependencies) *Application {
 	return &Application{
-		auth:     deps.Auth,
-		chat:     deps.Chat,
-		history:  deps.History,
-		sessions: deps.Sessions,
-		threads:  deps.Threads,
+		auth:         deps.Auth,
+		chat:         deps.Chat,
+		history:      deps.History,
+		sessions:     deps.Sessions,
+		threads:      deps.Threads,
+		keyValidator: deps.KeyValidator,
 	}
 }
 
@@ -50,11 +58,12 @@ func NewDefaultApplication() *Application {
 	auth := service.NewAuthService()
 
 	return NewApplication(Dependencies{
-		Auth:     auth,
-		Chat:     service.NewChatService(store, store, assistant),
-		History:  service.NewHistoryService(store, store, assistant),
-		Sessions: service.NewSessionService(store, store, assistant),
-		Threads:  service.NewThreadService(store, store, assistant),
+		Auth:         auth,
+		Chat:         service.NewChatService(store, store, assistant),
+		History:      service.NewHistoryService(store, store, assistant),
+		Sessions:     service.NewSessionService(store, store, assistant),
+		Threads:      service.NewThreadService(store, store, assistant),
+		KeyValidator: assistant,
 	})
 }
 

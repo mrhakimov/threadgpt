@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"threadgpt/domain"
 )
 
 type contextKey int
@@ -82,6 +83,17 @@ func (a *Application) HandleAuth(w http.ResponseWriter, r *http.Request) {
 	if len(req.APIKey) < 20 || !strings.HasPrefix(req.APIKey, "sk-") {
 		http.Error(w, "invalid api key", http.StatusBadRequest)
 		return
+	}
+
+	if a.keyValidator != nil {
+		if err := a.keyValidator.ValidateAPIKey(r.Context(), req.APIKey); err != nil {
+			if err == domain.ErrUnauthorized {
+				http.Error(w, "invalid or expired api key", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "failed to validate api key", http.StatusBadGateway)
+			return
+		}
 	}
 
 	token, err := a.auth.Login(req.APIKey)

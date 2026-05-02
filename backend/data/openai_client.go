@@ -29,6 +29,28 @@ func NewOpenAIClient() *OpenAIClient {
 	}
 }
 
+func (c *OpenAIClient) ValidateAPIKey(ctx context.Context, apiKey string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openAIBaseURL+"/models?limit=1", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		return domain.ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return domain.ErrInternal
+	}
+	return nil
+}
+
 func (c *OpenAIClient) CreateConversation(ctx context.Context, apiKey, systemPrompt string) (string, error) {
 	payload := map[string]any{}
 	if strings.TrimSpace(systemPrompt) != "" {

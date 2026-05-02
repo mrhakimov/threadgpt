@@ -112,11 +112,12 @@ func main() {
 	assistant := data.NewOpenAIClient()
 	auth := service.NewAuthService()
 	app := handlers.NewApplication(handlers.Dependencies{
-		Auth:     auth,
-		Chat:     service.NewChatService(store, store, assistant),
-		History:  service.NewHistoryService(store, store, assistant),
-		Sessions: service.NewSessionService(store, store, assistant),
-		Threads:  service.NewThreadService(store, store, assistant),
+		Auth:         auth,
+		Chat:         service.NewChatService(store, store, assistant),
+		History:      service.NewHistoryService(store, store, assistant),
+		Sessions:     service.NewSessionService(store, store, assistant),
+		Threads:      service.NewThreadService(store, store, assistant),
+		KeyValidator: assistant,
 	})
 
 	app.SetEncryptionKey(encKey)

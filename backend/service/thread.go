@@ -37,10 +37,7 @@ func (s *ThreadService) Reply(ctx context.Context, req ThreadRequest, stream rep
 	}
 
 	opCtx := context.WithoutCancel(ctx)
-	if err := stream.Start(""); err != nil {
-		return err
-	}
-	if err := s.assistant.RunAndStream(opCtx, req.APIKey, ref.ConversationID, req.UserMessage, stream); err != nil {
+	if err := s.assistant.RunAndStream(opCtx, req.APIKey, ref.ConversationID, req.UserMessage, "", stream); err != nil {
 		return err
 	}
 	return stream.Close()

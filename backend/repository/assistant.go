@@ -8,12 +8,13 @@ import (
 type StreamWriter interface {
 	Start(sessionID string) error
 	WriteChunk(chunk string) error
+	WriteError(detail domain.ErrorDescriptor) error
 	Close() error
 }
 
 type AssistantClient interface {
 	CreateConversation(ctx context.Context, apiKey, systemPrompt string) (string, error)
 	ListMessages(ctx context.Context, apiKey, conversationID string) ([]domain.Message, error)
-	RunAndStream(ctx context.Context, apiKey, conversationID, userMessage string, stream StreamWriter) error
+	RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID string, stream StreamWriter) error
 	DeleteConversation(ctx context.Context, apiKey, conversationID string) error
 }

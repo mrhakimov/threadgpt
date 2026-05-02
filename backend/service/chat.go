@@ -60,10 +60,7 @@ func (s *ChatService) Handle(ctx context.Context, req ChatRequest, stream reposi
 		return err
 	}
 
-	if err := stream.Start(session.ID); err != nil {
-		return err
-	}
-	if err := s.assistant.RunAndStream(opCtx, req.APIKey, conversationID, req.UserMessage, stream); err != nil {
+	if err := s.assistant.RunAndStream(opCtx, req.APIKey, conversationID, req.UserMessage, session.ID, stream); err != nil {
 		return err
 	}
 	return stream.Close()
