@@ -107,7 +107,7 @@ func (a *Application) HandleAuth(w http.ResponseWriter, r *http.Request) {
 		Secure:   secure,
 	})
 
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "token": token})
 }
 
 func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
@@ -126,12 +126,12 @@ func (a *Application) HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookie, err := r.Cookie("threadgpt_token")
-	if err != nil {
+	token := tokenFromRequest(r)
+	if token == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if err := a.auth.Check(cookie.Value); err != nil {
+	if err := a.auth.Check(token); err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -150,13 +150,13 @@ func (a *Application) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookie, err := r.Cookie("threadgpt_token")
-	if err != nil {
+	token := tokenFromRequest(r)
+	if token == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	expiresAt, err := a.auth.GetExpiresAt(cookie.Value)
+	expiresAt, err := a.auth.GetExpiresAt(token)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -182,8 +182,8 @@ func (a *Application) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if cookie, err := r.Cookie("threadgpt_token"); err == nil {
-		a.auth.Logout(cookie.Value)
+	if token := tokenFromRequest(r); token != "" {
+		a.auth.Logout(token)
 	}
 
 	secure := r.TLS != nil || os.Getenv("COOKIE_SECURE") == "true" ||
@@ -203,13 +203,13 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 func (a *Application) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("threadgpt_token")
-		if err != nil {
+		token := tokenFromRequest(r)
+		if token == "" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		authContext, err := a.auth.Authorize(cookie.Value)
+		authContext, err := a.auth.Authorize(token)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -219,6 +219,18 @@ func (a *Application) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 		ctx = context.WithValue(ctx, contextKeyAPIKeyHash, authContext.APIKeyHash)
 		next(w, r.WithContext(ctx))
 	}
+}
+
+// tokenFromRequest extracts the auth token from either the Authorization
+// header (Bearer scheme) or the threadgpt_token cookie.
+func tokenFromRequest(r *http.Request) string {
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimPrefix(auth, "Bearer ")
+	}
+	if cookie, err := r.Cookie("threadgpt_token"); err == nil {
+		return cookie.Value
+	}
+	return ""
 }
 
 func APIKeyFromContext(ctx context.Context) string {

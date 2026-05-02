@@ -70,7 +70,7 @@ Examples:
 
 ### 1. Create the database schema
 
-Create a Supabase project, then run [`20260403_1410_initial_schema.sql`](https://github.com/mrhakimov/threadgpt/blob/main/migrations/20260403_1410_initial_schema.sql) in the Supabase SQL editor.
+Create a Supabase project, then run the SQL files in [`migrations/up`](https://github.com/mrhakimov/threadgpt/tree/main/migrations/up) in order in the Supabase SQL editor, starting with [`20260403_1410_initial_schema.sql`](https://github.com/mrhakimov/threadgpt/blob/main/migrations/up/20260403_1410_initial_schema.sql).
 
 ### 2. Configure the backend
 
@@ -152,7 +152,8 @@ Per the repo instructions, after any significant change:
 
 - [`backend`](https://github.com/mrhakimov/threadgpt/tree/main/backend): Go API, auth, chat/thread handling, storage integration
 - [`frontend`](https://github.com/mrhakimov/threadgpt/tree/main/frontend): Next.js app and UI
-- [`migrations/20260403_1410_initial_schema.sql`](https://github.com/mrhakimov/threadgpt/blob/main/migrations/20260403_1410_initial_schema.sql): Supabase schema
+- [`migrations/up`](https://github.com/mrhakimov/threadgpt/tree/main/migrations/up): forward Supabase schema migrations
+- [`migrations/down`](https://github.com/mrhakimov/threadgpt/tree/main/migrations/down): rollback Supabase schema migrations
 - [`scripts/restart.sh`](https://github.com/mrhakimov/threadgpt/blob/main/scripts/restart.sh): local restart helper
 
 ## Roadmap Direction
