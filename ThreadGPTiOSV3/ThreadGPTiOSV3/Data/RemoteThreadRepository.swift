@@ -27,17 +27,23 @@ final class RemoteThreadRepository: ThreadRepository {
         struct Body: Encodable {
             let conversationId: String
             let userMessage: String
+            let model: String?
 
             enum CodingKeys: String, CodingKey {
                 case conversationId = "conversation_id"
                 case userMessage = "user_message"
+                case model
             }
         }
 
         _ = try await api.stream(
             method: "POST",
             path: "/api/thread",
-            body: Body(conversationId: conversationId, userMessage: userMessage),
+            body: Body(
+                conversationId: conversationId,
+                userMessage: userMessage,
+                model: ModelPreference.shared.selectedModel
+            ),
             onChunk: onChunk
         )
     }

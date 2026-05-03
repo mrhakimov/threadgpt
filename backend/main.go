@@ -118,6 +118,7 @@ func main() {
 		Sessions:     service.NewSessionService(store, store, assistant),
 		Threads:      service.NewThreadService(store, store, assistant),
 		KeyValidator: assistant,
+		ModelLister:  assistant,
 	})
 
 	app.SetEncryptionKey(encKey)
@@ -165,6 +166,7 @@ func main() {
 	handle("/api/history", app.RequireAuth(app.HandleHistory))
 	handle("/api/chat", app.RequireAuth(app.HandleChat))
 	handle("/api/thread", app.RequireAuth(app.HandleThread))
+	handle("/api/models", app.RequireAuth(app.HandleModels))
 
 	fmt.Printf("ThreadGPT backend listening on :%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, mux))

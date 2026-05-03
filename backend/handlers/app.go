@@ -17,6 +17,10 @@ type APIKeyValidator interface {
 	ValidateAPIKey(ctx context.Context, apiKey string) error
 }
 
+type ModelLister interface {
+	ListModels(ctx context.Context, apiKey string) ([]string, error)
+}
+
 type Dependencies struct {
 	Auth         *service.AuthService
 	Chat         *service.ChatService
@@ -24,6 +28,7 @@ type Dependencies struct {
 	Sessions     *service.SessionService
 	Threads      *service.ThreadService
 	KeyValidator APIKeyValidator
+	ModelLister  ModelLister
 }
 
 type Application struct {
@@ -33,6 +38,7 @@ type Application struct {
 	sessions     *service.SessionService
 	threads      *service.ThreadService
 	keyValidator APIKeyValidator
+	modelLister  ModelLister
 }
 
 var (
@@ -49,6 +55,7 @@ func NewApplication(deps Dependencies) *Application {
 		sessions:     deps.Sessions,
 		threads:      deps.Threads,
 		keyValidator: deps.KeyValidator,
+		modelLister:  deps.ModelLister,
 	}
 }
 
@@ -64,6 +71,7 @@ func NewDefaultApplication() *Application {
 		Sessions:     service.NewSessionService(store, store, assistant),
 		Threads:      service.NewThreadService(store, store, assistant),
 		KeyValidator: assistant,
+		ModelLister:  assistant,
 	})
 }
 

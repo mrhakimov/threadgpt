@@ -37,7 +37,7 @@ func TestOpenAIClient_RunAndStreamHandlesLargeChunks(t *testing.T) {
 	client := NewOpenAIClient()
 	stream := &recordingStreamWriter{}
 
-	if err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", "session-1", stream); err != nil {
+	if err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", "session-1", "", stream); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !stream.started {
@@ -116,7 +116,7 @@ func TestOpenAIClient_RunAndStreamDoesNotStartStreamOnProviderError(t *testing.T
 	client := NewOpenAIClient()
 	stream := &recordingStreamWriter{}
 
-	err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", "session-1", stream)
+	err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", "session-1", "", stream)
 	if err != domain.ErrQuotaExceeded {
 		t.Fatalf("expected quota exceeded, got %v", err)
 	}

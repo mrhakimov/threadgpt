@@ -18,7 +18,7 @@ func TestChatServiceHandle_ContinuesAfterClientDisconnect(t *testing.T) {
 	conversationRepo := &stubConversationRepository{}
 	assistant := &stubAssistantClient{
 		createConversationID: "conv-1",
-		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
+		runAndStreamFunc: func(ctx context.Context, _, conversationID, userMessage, sessionID, model string, stream repository.StreamWriter) error {
 			if err := stream.Start(sessionID); err != nil {
 				return err
 			}

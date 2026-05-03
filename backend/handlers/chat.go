@@ -10,6 +10,7 @@ type ChatRequest struct {
 	UserMessage string `json:"user_message"`
 	SessionID   string `json:"session_id"`
 	ForceNew    bool   `json:"force_new"`
+	Model       string `json:"model"`
 }
 
 func HandleChat(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +50,7 @@ func (a *Application) HandleChat(w http.ResponseWriter, r *http.Request) {
 		UserMessage: req.UserMessage,
 		SessionID:   req.SessionID,
 		ForceNew:    req.ForceNew,
+		Model:       req.Model,
 	}, newSSEStreamWriter(w))
 	if err != nil {
 		writeServiceError(w, err)

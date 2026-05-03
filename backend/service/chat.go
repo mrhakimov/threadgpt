@@ -20,6 +20,7 @@ type ChatRequest struct {
 	UserMessage string
 	SessionID   string
 	ForceNew    bool
+	Model       string
 }
 
 func NewChatService(sessions repository.SessionRepository, conversations repository.ConversationRepository, assistant repository.AssistantClient) *ChatService {
@@ -60,7 +61,7 @@ func (s *ChatService) Handle(ctx context.Context, req ChatRequest, stream reposi
 		return err
 	}
 
-	if err := s.assistant.RunAndStream(opCtx, req.APIKey, conversationID, req.UserMessage, session.ID, stream); err != nil {
+	if err := s.assistant.RunAndStream(opCtx, req.APIKey, conversationID, req.UserMessage, session.ID, req.Model, stream); err != nil {
 		return err
 	}
 	return stream.Close()

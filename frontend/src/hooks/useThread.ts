@@ -21,7 +21,7 @@ export function useThread(parentMessageId: string, onReplySent?: () => void) {
     setLoading(true)
     loadThreadHistory(parentMessageId)
       .then((data) => {
-        setMessages(data.messages ?? [])
+        setMessages((data.messages ?? []).slice(2))
         setHasMore(data.has_more ?? false)
       })
       .catch(() => {})

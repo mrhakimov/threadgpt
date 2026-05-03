@@ -55,6 +55,22 @@ func (c *OpenAIClient) ValidateAPIKey(ctx context.Context, apiKey string) error 
 	return nil
 }
 
+func (c *OpenAIClient) ListModels(ctx context.Context, apiKey string) ([]string, error) {
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := c.doRequest(ctx, apiKey, http.MethodGet, "/models", nil, &result); err != nil {
+		return nil, err
+	}
+	models := make([]string, len(result.Data))
+	for i, m := range result.Data {
+		models[i] = m.ID
+	}
+	return models, nil
+}
+
 func (c *OpenAIClient) CreateConversation(ctx context.Context, apiKey, systemPrompt string) (string, error) {
 	payload := map[string]any{}
 	if strings.TrimSpace(systemPrompt) != "" {
@@ -121,9 +137,14 @@ func (c *OpenAIClient) ListMessages(ctx context.Context, apiKey, conversationID 
 	return messages, nil
 }
 
-func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
+const defaultModel = "gpt-4o"
+
+func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID, model string, stream repository.StreamWriter) error {
+	if model == "" {
+		model = defaultModel
+	}
 	payload, err := json.Marshal(map[string]any{
-		"model":        "gpt-4o",
+		"model":        model,
 		"conversation": conversationID,
 		"input": []map[string]any{
 			{

@@ -13,18 +13,25 @@ final class RemoteChatRepository: ChatRepository {
             let userMessage: String
             let sessionId: String?
             let forceNew: Bool
+            let model: String?
 
             enum CodingKeys: String, CodingKey {
                 case userMessage = "user_message"
                 case sessionId = "session_id"
                 case forceNew = "force_new"
+                case model
             }
         }
 
         return try await api.stream(
             method: "POST",
             path: "/api/chat",
-            body: Body(userMessage: userMessage, sessionId: sessionId ?? "", forceNew: forceNew),
+            body: Body(
+                userMessage: userMessage,
+                sessionId: sessionId ?? "",
+                forceNew: forceNew,
+                model: ModelPreference.shared.selectedModel
+            ),
             onChunk: onChunk
         )
     }

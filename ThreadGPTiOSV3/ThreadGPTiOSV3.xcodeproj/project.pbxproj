@@ -32,6 +32,7 @@
 		A10023 /* TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* TokenStore.swift */; };
 		A10024 /* RemoteAuthRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10024 /* RemoteAuthRepository.swift */; };
 		A10025 /* RemoteSessionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10025 /* RemoteSessionRepository.swift */; };
+		764CBAA78C5A461FBF1A310C /* ModelPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4FA62B6AD8443BAB87E5DB /* ModelPreference.swift */; };
 		A10026 /* RemoteChatRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026 /* RemoteChatRepository.swift */; };
 		A10027 /* RemoteThreadRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10027 /* RemoteThreadRepository.swift */; };
 		A10028 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10028 /* AppContainer.swift */; };
@@ -64,6 +65,7 @@
 		B10023 /* TokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStore.swift; sourceTree = "<group>"; };
 		B10024 /* RemoteAuthRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAuthRepository.swift; sourceTree = "<group>"; };
 		B10025 /* RemoteSessionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSessionRepository.swift; sourceTree = "<group>"; };
+		1F4FA62B6AD8443BAB87E5DB /* ModelPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPreference.swift; sourceTree = "<group>"; };
 		B10026 /* RemoteChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteChatRepository.swift; sourceTree = "<group>"; };
 		B10027 /* RemoteThreadRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteThreadRepository.swift; sourceTree = "<group>"; };
 		B10028 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 				B10023 /* TokenStore.swift */,
 				B10024 /* RemoteAuthRepository.swift */,
 				B10025 /* RemoteSessionRepository.swift */,
+				1F4FA62B6AD8443BAB87E5DB /* ModelPreference.swift */,
 				B10026 /* RemoteChatRepository.swift */,
 				B10027 /* RemoteThreadRepository.swift */,
 			);
@@ -292,6 +295,7 @@
 				A10023 /* TokenStore.swift in Sources */,
 				A10024 /* RemoteAuthRepository.swift in Sources */,
 				A10025 /* RemoteSessionRepository.swift in Sources */,
+				764CBAA78C5A461FBF1A310C /* ModelPreference.swift in Sources */,
 				A10026 /* RemoteChatRepository.swift in Sources */,
 				A10027 /* RemoteThreadRepository.swift in Sources */,
 				A10028 /* AppContainer.swift in Sources */,

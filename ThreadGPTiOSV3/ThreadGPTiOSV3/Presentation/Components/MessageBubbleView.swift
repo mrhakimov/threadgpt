@@ -20,6 +20,13 @@ struct MessageBubbleView: View {
         return isUser ? Color.tgptSecondary : Color.tgptCard
     }
 
+    private var followUpLabel: String {
+        let count = message.replyCount
+        if count == 0 { return "Follow up" }
+        if count > 99 { return "99+ follow-ups" }
+        return count == 1 ? "1 follow-up" : "\(count) follow-ups"
+    }
+
     private var bubbleShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
     }
@@ -81,22 +88,14 @@ struct MessageBubbleView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "bubble.left")
                                 .font(.caption)
-                            Text("Follow up")
+                            Text(followUpLabel)
                                 .font(.caption)
-                            if message.replyCount > 0 {
-                                Text("\(message.replyCount)")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(Color.tgptMutedForeground)
-                                    .cornerRadius(8)
-                            }
+                            Spacer()
                         }
                         .foregroundColor(.tgptMutedForeground)
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                     }
                 }
             }
@@ -105,7 +104,7 @@ struct MessageBubbleView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 2)
-        .sheet(isPresented: $showSystemPromptEditor) {
+        .fullScreenCover(isPresented: $showSystemPromptEditor) {
             systemPromptEditor
         }
     }
@@ -139,6 +138,7 @@ struct MessageBubbleView: View {
                     Button("Cancel") {
                         showSystemPromptEditor = false
                     }
+                    .foregroundColor(.tgptMutedForeground)
                     .disabled(isSavingSystemPrompt)
                 }
 
@@ -146,11 +146,11 @@ struct MessageBubbleView: View {
                     Button(isSavingSystemPrompt ? "Saving" : "Save") {
                         Task { await saveSystemPrompt() }
                     }
+                    .foregroundColor(.tgptForeground)
                     .disabled(isSavingSystemPrompt || systemPromptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
-        .presentationDetents([.medium, .large])
     }
 
     private func beginEditingSystemPrompt() {

@@ -4,12 +4,16 @@ import Foundation
 final class SettingsViewModel: ObservableObject {
     @Published var expiresAt: Date?
     @Published var isLoading = false
-    @Published var confirmLogout = false
+    @Published var models: [String] = []
+    @Published var selectedModel: String = ""
+    @Published var isLoadingModels = false
 
     private let authRepo: AuthRepository
+    private let api = APIClient.shared
 
     init(authRepo: AuthRepository = AppContainer.shared.authRepo) {
         self.authRepo = authRepo
+        self.selectedModel = ModelPreference.shared.selectedModel ?? ""
     }
 
     var timeRemaining: String {
@@ -37,6 +41,23 @@ final class SettingsViewModel: ObservableObject {
         } catch {}
     }
 
+    func loadModels() async {
+        isLoadingModels = true
+        do {
+            let response: ModelsResponse = try await api.request(method: "GET", path: "/api/models")
+            models = response.models.sorted()
+            if selectedModel.isEmpty, !models.isEmpty {
+                selectModel(models.first(where: { $0 == "gpt-4o" }) ?? models[0])
+            }
+        } catch {}
+        isLoadingModels = false
+    }
+
+    func selectModel(_ model: String) {
+        selectedModel = model
+        ModelPreference.shared.selectedModel = model
+    }
+
     func logout() async -> Bool {
         isLoading = true
         do {
@@ -48,4 +69,8 @@ final class SettingsViewModel: ObservableObject {
             return false
         }
     }
+}
+
+private struct ModelsResponse: Codable {
+    let models: [String]
 }

@@ -17,6 +17,7 @@ type ThreadRequest struct {
 	APIKeyHash     string
 	ConversationID string
 	UserMessage    string
+	Model          string
 }
 
 func NewThreadService(sessions repository.SessionRepository, conversations repository.ConversationRepository, assistant repository.AssistantClient) *ThreadService {
@@ -37,7 +38,7 @@ func (s *ThreadService) Reply(ctx context.Context, req ThreadRequest, stream rep
 	}
 
 	opCtx := context.WithoutCancel(ctx)
-	if err := s.assistant.RunAndStream(opCtx, req.APIKey, ref.ConversationID, req.UserMessage, "", stream); err != nil {
+	if err := s.assistant.RunAndStream(opCtx, req.APIKey, ref.ConversationID, req.UserMessage, "", req.Model, stream); err != nil {
 		return err
 	}
 	return stream.Close()
@@ -56,12 +57,7 @@ func (s *ThreadService) Get(ctx context.Context, apiKey, apiKeyHash, conversatio
 	if err != nil {
 		return nil, err
 	}
-	if len(messages) <= 2 {
-		return []domain.Message{}, nil
-	}
-
-	threadMessages := messages[2:]
-	paginated := paginateNewestAscending(threadMessages, limit, offset)
+	paginated := paginateNewestAscending(messages, limit, offset)
 	for i := range paginated {
 		paginated[i].SessionID = ref.SessionID
 	}

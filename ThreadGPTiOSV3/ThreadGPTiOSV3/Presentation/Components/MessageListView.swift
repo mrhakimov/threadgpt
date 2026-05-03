@@ -18,7 +18,7 @@ struct MessageListView: View {
 
     private let bottomID = "message-list-bottom"
     private let autoScrollThreshold: CGFloat = 80
-    private let scrollButtonThreshold: CGFloat = 32
+    private let scrollButtonThreshold: CGFloat = 300
     private var hasScrollableContent: Bool {
         !messages.isEmpty || isSending || !streamingContent.isEmpty
     }
@@ -93,7 +93,7 @@ struct MessageListView: View {
                                 )
                         }
                         .padding(.top, 8)
-                        .padding(.bottom, hasScrollableContent && showsScrollToBottom ? 64 : 8)
+                        .padding(.bottom, hasScrollableContent && showsScrollToBottom ? 64 : 16)
                         .background(
                             ScrollViewResolver { resolvedScrollView in
                                 if scrollView !== resolvedScrollView {
@@ -154,6 +154,9 @@ struct MessageListView: View {
                         restoreScrollOffset(preservedOffset)
                     } else {
                         scrollToBottom(proxy, animated: false)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            scrollToBottom(proxy, animated: false)
+                        }
                     }
                 }
                 .onDisappear {

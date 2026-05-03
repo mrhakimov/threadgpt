@@ -24,7 +24,7 @@ func TestThreadServiceReply_ContinuesAfterClientDisconnect(t *testing.T) {
 		},
 	}
 	assistant := &stubAssistantClient{
-		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
+		runAndStreamFunc: func(ctx context.Context, _, conversationID, userMessage, sessionID, model string, stream repository.StreamWriter) error {
 			if err := stream.Start(sessionID); err != nil {
 				return err
 			}
@@ -55,7 +55,7 @@ func TestThreadServiceReply_ContinuesAfterClientDisconnect(t *testing.T) {
 	}
 }
 
-func TestThreadServiceGet_ExcludesInitialExchangeAndPaginatesNewestFirst(t *testing.T) {
+func TestThreadServiceGet_PaginatesNewestFirst(t *testing.T) {
 	sessionRepo := &stubSessionRepository{
 		session: &domain.Session{
 			ID:           "session-1",
@@ -185,7 +185,7 @@ func (r *stubConversationRepository) ListBySessionAsc(context.Context, string) (
 type stubAssistantClient struct {
 	createConversationID   string
 	createConversationFunc func(context.Context, string, string) (string, error)
-	runAndStreamFunc       func(context.Context, string, string, string, string, repository.StreamWriter) error
+	runAndStreamFunc       func(context.Context, string, string, string, string, string, repository.StreamWriter) error
 	listMessages           []domain.Message
 	deletedConversationIDs []string
 }
@@ -204,9 +204,9 @@ func (a *stubAssistantClient) ListMessages(context.Context, string, string) ([]d
 	return append([]domain.Message(nil), a.listMessages...), nil
 }
 
-func (a *stubAssistantClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
+func (a *stubAssistantClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID, model string, stream repository.StreamWriter) error {
 	if a.runAndStreamFunc != nil {
-		return a.runAndStreamFunc(ctx, apiKey, conversationID, userMessage, sessionID, stream)
+		return a.runAndStreamFunc(ctx, apiKey, conversationID, userMessage, sessionID, model, stream)
 	}
 	if err := stream.Start(sessionID); err != nil {
 		return err

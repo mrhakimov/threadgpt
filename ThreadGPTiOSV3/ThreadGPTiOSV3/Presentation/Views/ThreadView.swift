@@ -35,12 +35,6 @@ struct ThreadView: View {
                 Divider()
                     .background(Color.tgptBorder)
 
-                // Parent message preview
-                parentPreview
-
-                Divider()
-                    .background(Color.tgptBorder)
-
                 // Messages
                 if !viewModel.hasLoadedMessages || (viewModel.isLoading && viewModel.messages.isEmpty) {
                     Spacer()
@@ -151,23 +145,6 @@ struct ThreadView: View {
                 }
             }
         }
-    }
-
-    private var parentPreview: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Replying to")
-                .font(.caption)
-                .foregroundColor(.tgptMutedForeground)
-
-            Text(viewModel.parentMessage.content)
-                .font(.subheadline)
-                .foregroundColor(.tgptForeground)
-                .lineLimit(4)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.tgptBackground)
     }
 
     private var threadEmptyState: some View {

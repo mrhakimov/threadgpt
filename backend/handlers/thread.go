@@ -9,6 +9,7 @@ import (
 type ThreadRequest struct {
 	ConversationID string `json:"conversation_id"`
 	UserMessage    string `json:"user_message"`
+	Model          string `json:"model"`
 }
 
 func HandleThread(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +48,7 @@ func (a *Application) HandleThread(w http.ResponseWriter, r *http.Request) {
 		APIKeyHash:     apiKeyHash,
 		ConversationID: req.ConversationID,
 		UserMessage:    req.UserMessage,
+		Model:          req.Model,
 	}, newSSEStreamWriter(w))
 	if err != nil {
 		writeServiceError(w, err)

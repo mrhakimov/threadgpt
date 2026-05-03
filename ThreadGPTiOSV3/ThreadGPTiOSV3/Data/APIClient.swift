@@ -6,7 +6,7 @@ final class APIClient {
     #if targetEnvironment(simulator)
     private let baseURL = "http://localhost:8000"
     #else
-    private let baseURL = "http://192.168.1.139:8000"
+    private let baseURL = "https://threadgpt.onrender.com"
     #endif
 
     private let session: URLSession
