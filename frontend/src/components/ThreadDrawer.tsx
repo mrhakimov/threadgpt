@@ -7,22 +7,25 @@ import { useThread } from "@/hooks/useThread"
 import MessageList from "./MessageList"
 import ChatInput from "./ChatInput"
 import { Button } from "@/components/ui/button"
-import { X } from "lucide-react"
+import { Brain, Check, Copy, CopyCheck, Pencil, X } from "lucide-react"
 import { MIN_LOADING_MS } from "@/lib/constants"
 import LoadingSpinner from "@/components/shared/LoadingSpinner"
+import { toErrorMessage } from "@/domain/errors"
 
 interface Props {
   parentMessage: Message
+  systemPrompt?: string | null
   onClose: () => void
   onReply?: (parentMessageId: string) => void
   onAbortRef?: (abortFn: (() => void) | null) => void
+  onEditSystemPrompt?: (newContent: string) => Promise<void>
 }
 
 const DURATION = 300
 const SLIDE_IN_MS = 300
 const LOAD_MORE_TOP_THRESHOLD = 200
 
-export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortRef }: Props) {
+export default function ThreadDrawer({ parentMessage, systemPrompt, onClose, onReply, onAbortRef, onEditSystemPrompt }: Props) {
   const { messages, hasMore, loadingMore, loading, sending, streamingContent, error, sendMessage, loadMore, abort } = useThread(
     parentMessage.id,
     onReply ? () => onReply(parentMessage.id) : undefined
@@ -31,9 +34,16 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
   const [closing, setClosing] = useState(false)
   const [showLoading, setShowLoading] = useState(true)
   const [canLoadMoreOnScroll, setCanLoadMoreOnScroll] = useState(false)
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
+  const [editingPrompt, setEditingPrompt] = useState(false)
+  const [promptDraft, setPromptDraft] = useState(systemPrompt ?? "")
+  const [savingPrompt, setSavingPrompt] = useState(false)
+  const [promptError, setPromptError] = useState<string | null>(null)
+  const [showPromptMenu, setShowPromptMenu] = useState(false)
   const minLoadingDoneRef = useRef(false)
   const dataLoadedRef = useRef(false)
   const minLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const promptLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // After drawer opens, show spinner for MIN_LOADING_MS, then hide if data is also ready
   useEffect(() => {
@@ -50,6 +60,9 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
       if (minLoadingTimerRef.current) {
         clearTimeout(minLoadingTimerRef.current)
       }
+      if (promptLongPressTimerRef.current) {
+        clearTimeout(promptLongPressTimerRef.current)
+      }
     }
   }, [])
 
@@ -59,6 +72,10 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
       if (minLoadingDoneRef.current) setShowLoading(false)
     }
   }, [loading])
+
+  useEffect(() => {
+    if (!editingPrompt) setPromptDraft(systemPrompt ?? "")
+  }, [editingPrompt, systemPrompt])
 
   useEffect(() => {
     setCanLoadMoreOnScroll(false)
@@ -80,6 +97,57 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
     onAbortRef?.(abort)
     return () => onAbortRef?.(null)
   }, [abort, onAbortRef])
+
+  async function copySystemPrompt() {
+    if (!systemPrompt) return
+    await navigator.clipboard.writeText(systemPrompt)
+    setCopiedPrompt(true)
+    setTimeout(() => setCopiedPrompt(false), 2000)
+  }
+
+  function beginPromptEdit() {
+    setPromptDraft(systemPrompt ?? "")
+    setPromptError(null)
+    setShowPromptMenu(false)
+    setEditingPrompt(true)
+  }
+
+  async function saveSystemPrompt() {
+    const trimmed = promptDraft.trim()
+    if (!trimmed || !onEditSystemPrompt) return
+    if (trimmed === systemPrompt?.trim()) {
+      setEditingPrompt(false)
+      return
+    }
+
+    setSavingPrompt(true)
+    setPromptError(null)
+    try {
+      await onEditSystemPrompt(trimmed)
+      setEditingPrompt(false)
+    } catch (e) {
+      setPromptError(toErrorMessage(e))
+    } finally {
+      setSavingPrompt(false)
+    }
+  }
+
+  function cancelPromptEdit() {
+    setPromptDraft(systemPrompt ?? "")
+    setPromptError(null)
+    setEditingPrompt(false)
+  }
+
+  function clearPromptLongPressTimer() {
+    if (!promptLongPressTimerRef.current) return
+    clearTimeout(promptLongPressTimerRef.current)
+    promptLongPressTimerRef.current = null
+  }
+
+  function openPromptMenu() {
+    if (editingPrompt) return
+    setShowPromptMenu(true)
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -126,6 +194,120 @@ export default function ThreadDrawer({ parentMessage, onClose, onReply, onAbortR
               <X className="h-4 w-4" />
             </Button>
           </div>
+
+          {systemPrompt && (
+            <div
+              className="relative border-b"
+              onContextMenu={(e) => {
+                e.preventDefault()
+                openPromptMenu()
+              }}
+              onTouchStart={() => {
+                clearPromptLongPressTimer()
+                promptLongPressTimerRef.current = setTimeout(openPromptMenu, 500)
+              }}
+              onTouchEnd={clearPromptLongPressTimer}
+              onTouchCancel={clearPromptLongPressTimer}
+            >
+              <div className="px-4 py-3">
+                <div className="flex gap-3 items-start">
+                  <Brain className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50">System prompt</p>
+                      <div className="flex items-center gap-1.5">
+                        {editingPrompt ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={cancelPromptEdit}
+                              disabled={savingPrompt}
+                              className="text-muted-foreground hover:text-foreground transition-colors"
+                              title="Cancel"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={saveSystemPrompt}
+                              disabled={savingPrompt || !promptDraft.trim()}
+                              className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                              title="Save"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={copySystemPrompt}
+                              className="text-muted-foreground hover:text-foreground transition-colors"
+                              title="Copy"
+                            >
+                              {copiedPrompt ? <CopyCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                            </button>
+                            {onEditSystemPrompt && (
+                              <button
+                                type="button"
+                                onClick={beginPromptEdit}
+                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                title="Edit"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {editingPrompt ? (
+                      <textarea
+                        value={promptDraft}
+                        onChange={(e) => setPromptDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") cancelPromptEdit()
+                          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveSystemPrompt()
+                        }}
+                        disabled={savingPrompt}
+                        className="w-full min-h-24 resize-y rounded-md border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+                      />
+                    ) : (
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed">
+                        {systemPrompt}
+                      </p>
+                    )}
+                    {promptError && <p className="mt-1 text-xs text-destructive">{promptError}</p>}
+                  </div>
+                </div>
+              </div>
+              {showPromptMenu && (
+                <div className="absolute right-4 top-10 z-10 min-w-32 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      copySystemPrompt()
+                      setShowPromptMenu(false)
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                  >
+                    {copiedPrompt ? <CopyCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    Copy
+                  </button>
+                  {onEditSystemPrompt && (
+                    <button
+                      type="button"
+                      onClick={beginPromptEdit}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="border-b">
             <div className="px-4 py-3">

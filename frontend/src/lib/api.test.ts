@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   API_URL,
+  auth,
   checkAuth,
   sendChatMessage,
   sendThreadMessage,
@@ -47,6 +48,44 @@ describe("api", () => {
 
     await expect(checkAuth()).resolves.toBe(false)
     expect(localStorage.getItem("threadgpt_authed")).toBeNull()
+  })
+
+  it("uses the server-provided auth error message", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        error: {
+          code: "invalid_api_key",
+          message: "OpenAI rejected this API key. Check it and try again.",
+          status: 401,
+        },
+      }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+
+    await expect(auth("sk-test-api-key-1234567890")).rejects.toThrow(
+      "OpenAI rejected this API key. Check it and try again.",
+    )
+  })
+
+  it("uses the server-provided chat error message", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        error: {
+          code: "quota_exceeded",
+          message: "This OpenAI API key has run out of quota. Check your usage and billing, then try again.",
+          status: 429,
+        },
+      }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+
+    await expect(sendChatMessage("Hi", vi.fn())).rejects.toThrow(
+      "This OpenAI API key has run out of quota. Check your usage and billing, then try again.",
+    )
   })
 
   it("streams chat chunks and returns the resolved session id", async () => {
@@ -97,5 +136,20 @@ describe("api", () => {
 
     expect(onChunk).toHaveBeenNthCalledWith(1, "First")
     expect(onChunk).toHaveBeenNthCalledWith(2, " reply")
+  })
+
+  it("throws when the stream emits a structured server error", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      createStreamResponse([
+        'data: {"error":{"code":"server_error","message":"OpenAI is unavailable right now. Please try again in a moment.","status":502}}\n',
+        "data: [DONE]\n",
+      ]),
+    )
+
+    await expect(
+      sendThreadMessage("parent-1", "Follow up", vi.fn()),
+    ).rejects.toThrow(
+      "OpenAI is unavailable right now. Please try again in a moment.",
+    )
   })
 })

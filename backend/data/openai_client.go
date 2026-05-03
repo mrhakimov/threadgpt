@@ -38,15 +38,19 @@ func (c *OpenAIClient) ValidateAPIKey(ctx context.Context, apiKey string) error 
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		log.Printf("openai validation error on GET /models: %v", err)
+		return domain.ErrProviderUnavailable
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	if resp.StatusCode == 401 {
-		return domain.ErrUnauthorized
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("openai validation read error on GET /models: %v", err)
+		return domain.ErrProviderUnavailable
 	}
 	if resp.StatusCode >= 400 {
-		return domain.ErrInternal
+		log.Printf("openai validation error %d on GET /models: %s", resp.StatusCode, truncateForLog(respBody))
+		return mapOpenAIError(resp.StatusCode, respBody)
 	}
 	return nil
 }
@@ -117,7 +121,7 @@ func (c *OpenAIClient) ListMessages(ctx context.Context, apiKey, conversationID 
 	return messages, nil
 }
 
-func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage string, stream repository.StreamWriter) error {
+func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
 	payload, err := json.Marshal(map[string]any{
 		"model":        "gpt-4o",
 		"conversation": conversationID,
@@ -146,13 +150,23 @@ func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID,
 
 	resp, err := c.streamClient.Do(req)
 	if err != nil {
-		return err
+		log.Printf("openai stream request failed on POST /responses: %v", err)
+		return domain.ErrProviderUnavailable
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		log.Printf("openai stream error %d on POST /responses", resp.StatusCode)
-		return domain.ErrInternal
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			log.Printf("openai stream read error %d on POST /responses: %v", resp.StatusCode, readErr)
+			return domain.ErrProviderUnavailable
+		}
+		log.Printf("openai stream error %d on POST /responses: %s", resp.StatusCode, truncateForLog(respBody))
+		return mapOpenAIError(resp.StatusCode, respBody)
+	}
+
+	if err := stream.Start(sessionID); err != nil {
+		return err
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -169,29 +183,35 @@ func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID,
 			break
 		}
 
-		var event map[string]any
+		var event openAIStreamEvent
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			continue
 		}
 
-		eventType, _ := event["type"].(string)
-		switch eventType {
+		switch event.Type {
 		case "response.output_text.delta":
-			chunk, _ := event["delta"].(string)
-			if chunk == "" {
+			if event.Delta == "" {
 				continue
 			}
-			if err := stream.WriteChunk(chunk); err != nil {
+			if err := stream.WriteChunk(event.Delta); err != nil {
 				return err
 			}
 		case "error":
-			log.Printf("openai response stream returned error event")
-			return domain.ErrInternal
+			detail := event.errorDetail()
+			log.Printf("openai response stream returned error event: code=%q message=%q", detail.Code, detail.Message)
+			if err := stream.WriteError(domain.DescribeError(classifyOpenAIError(0, detail))); err != nil {
+				return err
+			}
+			return nil
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return err
+		log.Printf("openai stream read error on POST /responses: %v", err)
+		if err := stream.WriteError(domain.DescribeError(domain.ErrProviderUnavailable)); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	return nil
@@ -249,17 +269,19 @@ func (c *OpenAIClient) doRequest(ctx context.Context, apiKey, method, path strin
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		log.Printf("openai request failed on %s %s: %v", method, path, err)
+		return domain.ErrProviderUnavailable
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		log.Printf("openai read failed on %s %s: %v", method, path, err)
+		return domain.ErrProviderUnavailable
 	}
 	if resp.StatusCode >= 400 {
 		log.Printf("openai error %d on %s %s: %s", resp.StatusCode, method, path, truncateForLog(respBody))
-		return domain.ErrInternal
+		return mapOpenAIError(resp.StatusCode, respBody)
 	}
 	if result != nil {
 		if len(respBody) == 0 {
@@ -268,4 +290,61 @@ func (c *OpenAIClient) doRequest(ctx context.Context, apiKey, method, path strin
 		return json.Unmarshal(respBody, result)
 	}
 	return nil
+}
+
+type openAIErrorResponse struct {
+	Error openAIErrorDetail `json:"error"`
+}
+
+type openAIErrorDetail struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Code    string `json:"code"`
+}
+
+type openAIStreamEvent struct {
+	Type    string             `json:"type"`
+	Delta   string             `json:"delta"`
+	Code    string             `json:"code"`
+	Message string             `json:"message"`
+	Error   *openAIErrorDetail `json:"error"`
+}
+
+func (e openAIStreamEvent) errorDetail() openAIErrorDetail {
+	if e.Error != nil {
+		return *e.Error
+	}
+	return openAIErrorDetail{
+		Message: e.Message,
+		Type:    e.Type,
+		Code:    e.Code,
+	}
+}
+
+func mapOpenAIError(status int, body []byte) error {
+	var payload openAIErrorResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return classifyOpenAIError(status, openAIErrorDetail{})
+	}
+	return classifyOpenAIError(status, payload.Error)
+}
+
+func classifyOpenAIError(status int, detail openAIErrorDetail) error {
+	code := strings.ToLower(strings.TrimSpace(detail.Code))
+	message := strings.ToLower(strings.TrimSpace(detail.Message))
+
+	switch {
+	case status == http.StatusUnauthorized || code == "invalid_api_key":
+		return domain.ErrInvalidAPIKey
+	case status == http.StatusForbidden || code == "insufficient_permissions":
+		return domain.ErrForbidden
+	case code == "insufficient_quota" || strings.Contains(message, "quota"):
+		return domain.ErrQuotaExceeded
+	case status == http.StatusTooManyRequests || code == "rate_limit_exceeded" || strings.Contains(message, "rate limit"):
+		return domain.ErrRateLimited
+	case status >= http.StatusInternalServerError:
+		return domain.ErrProviderUnavailable
+	default:
+		return domain.ErrInternal
+	}
 }

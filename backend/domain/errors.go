@@ -6,15 +6,15 @@ import (
 )
 
 var (
-	ErrInvalidArgument    = errors.New("invalid argument")
-	ErrUnauthorized       = errors.New("unauthorized")
-	ErrForbidden          = errors.New("forbidden")
-	ErrNotFound           = errors.New("not found")
-	ErrRateLimited        = errors.New("rate limited")
-	ErrInvalidAPIKey      = errors.New("invalid api key")
-	ErrQuotaExceeded      = errors.New("quota exceeded")
+	ErrInvalidArgument     = errors.New("invalid argument")
+	ErrUnauthorized        = errors.New("unauthorized")
+	ErrForbidden           = errors.New("forbidden")
+	ErrNotFound            = errors.New("not found")
+	ErrRateLimited         = errors.New("rate limited")
+	ErrInvalidAPIKey       = errors.New("invalid api key")
+	ErrQuotaExceeded       = errors.New("quota exceeded")
 	ErrProviderUnavailable = errors.New("provider unavailable")
-	ErrInternal           = errors.New("internal error")
+	ErrInternal            = errors.New("internal error")
 )
 
 type ErrorDescriptor struct {

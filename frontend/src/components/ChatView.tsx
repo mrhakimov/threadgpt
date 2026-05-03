@@ -113,6 +113,13 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
     setFocusTrigger((n) => n + 1)
   }, [])
 
+  const handleEditSystemPrompt = useCallback(async (content: string) => {
+    if (!session?.session_id) return
+    await updateConversationSystemPrompt(session.session_id, content)
+    updateLocalSystemPrompt(content)
+    setSidebarRefreshTrigger((n) => n + 1)
+  }, [session?.session_id, updateLocalSystemPrompt])
+
   const handleOpenSettings = useCallback(() => {
     if (settingsCloseTimerRef.current) {
       clearTimeout(settingsCloseTimerRef.current)
@@ -195,10 +202,7 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
                   streamingContent={streamingContent}
                   sending={sending}
                   onReply={setThreadParent}
-                  onEditSystemPrompt={session?.session_id ? async (content) => {
-                    await updateConversationSystemPrompt(session.session_id!, content)
-                    updateLocalSystemPrompt(content)
-                  } : undefined}
+                  onEditSystemPrompt={session?.session_id ? handleEditSystemPrompt : undefined}
                   scrollRef={scrollRef}
                   scrollContextKey={session?.session_id ?? sessionId ?? "new-conversation"}
                   onInitialScrollComplete={() => setCanLoadMoreOnScroll(true)}
@@ -225,9 +229,11 @@ export default function ChatView({ sessionId, onSelectSession, onUnauthorized }:
         {threadParent && (
           <ThreadDrawer
             parentMessage={threadParent}
+            systemPrompt={session?.system_prompt ?? null}
             onClose={() => { threadAbortRef.current?.(); setThreadParent(null); setFocusTrigger((n) => n + 1) }}
             onReply={(parentId) => incrementReplyCount(parentId, 1)}
             onAbortRef={(fn) => { threadAbortRef.current = fn }}
+            onEditSystemPrompt={session?.session_id ? handleEditSystemPrompt : undefined}
           />
         )}
 

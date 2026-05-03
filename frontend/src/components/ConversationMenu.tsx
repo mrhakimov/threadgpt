@@ -8,6 +8,7 @@ import ConversationMenuHeader from "@/components/conversations/ConversationMenuH
 import NewConversationButton from "@/components/conversations/NewConversationButton"
 import ConversationListItem from "@/components/conversations/ConversationListItem"
 import LoadingSpinner from "@/components/shared/LoadingSpinner"
+import { toErrorMessage } from "@/domain/errors"
 import {
   deleteConversation,
   getConversationLabel,
@@ -134,7 +135,7 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
       )
       if (sessionId === activeSessionId) onRenameActive?.(name)
     } catch (e) {
-      setError(String(e))
+      setError(toErrorMessage(e))
     }
   }
 
@@ -156,7 +157,7 @@ export default function ConversationMenu({ activeSessionId, isCurrentEmpty, coll
         onSelectSession(null)
       }
     } catch (e) {
-      setError(String(e))
+      setError(toErrorMessage(e))
     } finally {
       setConfirmDeleteId(null)
     }

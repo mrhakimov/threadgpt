@@ -21,18 +21,18 @@ func (a *Application) HandleThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	var req ThreadRequest
 	if err := decodeJSON(r, &req); err != nil || req.ConversationID == "" || req.UserMessage == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_request", "The request body was invalid."))
 		return
 	}
 	if len(req.UserMessage) > 32*1024 {
-		http.Error(w, "message too long", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "message_too_long", "Messages must be 32 KB or smaller."))
 		return
 	}
 
@@ -56,7 +56,7 @@ func (a *Application) HandleThread(w http.ResponseWriter, r *http.Request) {
 func (a *Application) handleGetThread(w http.ResponseWriter, r *http.Request) {
 	conversationID := r.URL.Query().Get("conversation_id")
 	if conversationID == "" {
-		http.Error(w, "missing conversation_id", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "missing_conversation_id", "A conversation_id is required."))
 		return
 	}
 

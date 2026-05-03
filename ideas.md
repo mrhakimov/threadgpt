@@ -18,3 +18,5 @@
 - file upload
 - add markdown support
 - poll messages / threads sent from mobile
+- Consider a “full thread” endpoint. Right now /api/thread omits the root top-level exchange; the web client reconstructs it itself in frontend/src/services/chatService.ts (line 241). SwiftUI can do
+  the same, but the API shape is a little awkward. - Here I'd love to still be doing pagination, if that's not what you're talking about - explain it to me and ask followups

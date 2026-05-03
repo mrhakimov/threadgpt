@@ -43,13 +43,13 @@ func HandleHistory(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 
 	sessionID := r.Header.Get("X-Session-ID")
 	if sessionID != "" && !isValidUUID(sessionID) {
-		http.Error(w, "invalid session id", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_session_id", "The session ID was invalid."))
 		return
 	}
 

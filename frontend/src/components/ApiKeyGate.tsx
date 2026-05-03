@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { toErrorMessage } from "@/domain/errors"
 import { API_URL } from "@/lib/api"
 
 interface Props {
@@ -40,7 +41,7 @@ export default function ApiKeyGate({ onSubmit }: Props) {
     try {
       await onSubmit(trimmed)
     } catch (err) {
-      setError(String(err))
+      setError(toErrorMessage(err))
     } finally {
       setLoading(false)
     }

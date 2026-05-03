@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { act, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import ThreadDrawer from "./ThreadDrawer"
 import type { Message } from "@/types"
@@ -38,6 +38,11 @@ vi.mock("@/lib/constants", () => ({
 }))
 
 vi.mock("lucide-react", () => ({
+  Brain: () => <span data-testid="brain-icon" />,
+  Check: () => <span data-testid="check-icon" />,
+  Copy: () => <span data-testid="copy-icon" />,
+  CopyCheck: () => <span data-testid="copy-check-icon" />,
+  Pencil: () => <span data-testid="pencil-icon" />,
   X: () => <span data-testid="close-icon" />,
 }))
 
@@ -143,5 +148,42 @@ describe("ThreadDrawer", () => {
     expect(dividerSection).toBeTruthy()
     expect(dividerSection).not.toHaveClass("px-4")
     expect(dividerSection?.firstElementChild).toHaveClass("px-4", "py-3")
+  })
+
+  it("shows the system prompt above the parent preview", () => {
+    render(
+      <ThreadDrawer
+        parentMessage={createMessage("parent", "Parent message")}
+        systemPrompt="Use a concise voice"
+        onClose={vi.fn()}
+      />,
+    )
+
+    act(() => {
+      vi.runAllTimers()
+    })
+
+    expect(screen.getByText("System prompt")).toBeInTheDocument()
+    expect(screen.getByText("Use a concise voice")).toBeInTheDocument()
+  })
+
+  it("opens copy and edit actions from the prompt context menu", () => {
+    render(
+      <ThreadDrawer
+        parentMessage={createMessage("parent", "Parent message")}
+        systemPrompt="Use a concise voice"
+        onClose={vi.fn()}
+        onEditSystemPrompt={vi.fn()}
+      />,
+    )
+
+    act(() => {
+      vi.runAllTimers()
+    })
+
+    fireEvent.contextMenu(screen.getByText("Use a concise voice"))
+
+    expect(screen.getByText("Copy")).toBeInTheDocument()
+    expect(screen.getByText("Edit")).toBeInTheDocument()
   })
 })

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Message } from "@/types"
 import { Button } from "@/components/ui/button"
 import { MessageSquare, Info, Pencil, Check, X, Copy, CopyCheck } from "lucide-react"
+import { toErrorMessage } from "@/domain/errors"
 import { cn } from "@/lib/utils"
 
 interface Props {
@@ -65,7 +66,7 @@ export default function MessageBubble({ message, streaming, onReply, isSystemPro
       await onEditSystemPrompt(editValue.trim())
       setEditing(false)
     } catch (e) {
-      setSaveError(String(e))
+      setSaveError(toErrorMessage(e))
     } finally {
       setSaving(false)
     }

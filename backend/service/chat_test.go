@@ -18,7 +18,10 @@ func TestChatServiceHandle_ContinuesAfterClientDisconnect(t *testing.T) {
 	conversationRepo := &stubConversationRepository{}
 	assistant := &stubAssistantClient{
 		createConversationID: "conv-1",
-		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage string, _ repository.StreamWriter) error {
+		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
+			if err := stream.Start(sessionID); err != nil {
+				return err
+			}
 			if err := ctx.Err(); err != nil {
 				t.Fatalf("expected detached context during stream, got %v", err)
 			}
@@ -89,6 +92,10 @@ func (s *recordingChatStreamWriter) Start(string) error {
 
 func (s *recordingChatStreamWriter) WriteChunk(chunk string) error {
 	s.chunk += chunk
+	return nil
+}
+
+func (s *recordingChatStreamWriter) WriteError(domain.ErrorDescriptor) error {
 	return nil
 }
 

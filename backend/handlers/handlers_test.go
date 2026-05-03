@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"threadgpt/domain"
+	"threadgpt/service"
 	"time"
 )
 
@@ -116,6 +117,140 @@ func TestHandleChat_ExistingSessionCreatesConversationAndStreamsReply(t *testing
 	}
 	if snapshot.conversations[0].ConversationID != "conv-1" {
 		t.Fatalf("expected stored conversation id conv-1, got %+v", snapshot.conversations[0])
+	}
+}
+
+func TestHandleChat_InvalidAPIKeyReturnsStructuredErrorBeforeStreamStarts(t *testing.T) {
+	prompt := "You are concise"
+	state := newFakeSupabaseState()
+	state.sessions = append(state.sessions, domain.Session{
+		ID:           validUUID(1),
+		APIKeyHash:   testUserHash,
+		SystemPrompt: &prompt,
+		CreatedAt:    state.nextTimestamp(),
+	})
+	server := state.newServer()
+	defer server.Close()
+
+	t.Setenv("SUPABASE_URL", server.URL)
+	t.Setenv("SUPABASE_SERVICE_KEY", "test-service-key")
+
+	restore := mockOpenAITransport(t, func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/conversations":
+			return jsonHTTPResponse(http.StatusOK, map[string]string{"id": "conv-1"}), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/responses":
+			return jsonHTTPResponse(http.StatusUnauthorized, map[string]any{
+				"error": map[string]string{
+					"code":    "invalid_api_key",
+					"message": "Incorrect API key provided",
+				},
+			}), nil
+		default:
+			t.Fatalf("unexpected OpenAI request: %s %s", req.Method, req.URL.Path)
+			return nil, nil
+		}
+	})
+	defer restore()
+
+	body := bytes.NewBufferString(`{"user_message":"Say hi","session_id":"00000000-0000-0000-0000-000000000001"}`)
+	req := newAuthedRequest(t, http.MethodPost, "/api/chat", body, testUserHash)
+	rec := httptest.NewRecorder()
+
+	HandleChat(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected JSON error response, got %q", contentType)
+	}
+	if strings.Contains(rec.Body.String(), "data: ") {
+		t.Fatalf("expected regular JSON error, got SSE payload %q", rec.Body.String())
+	}
+
+	var payload apiErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.Error.Code != "invalid_api_key" {
+		t.Fatalf("expected invalid_api_key, got %+v", payload.Error)
+	}
+}
+
+func TestHandleChat_QuotaExceededReturnsStructuredErrorBeforeStreamStarts(t *testing.T) {
+	prompt := "You are concise"
+	state := newFakeSupabaseState()
+	state.sessions = append(state.sessions, domain.Session{
+		ID:           validUUID(1),
+		APIKeyHash:   testUserHash,
+		SystemPrompt: &prompt,
+		CreatedAt:    state.nextTimestamp(),
+	})
+	server := state.newServer()
+	defer server.Close()
+
+	t.Setenv("SUPABASE_URL", server.URL)
+	t.Setenv("SUPABASE_SERVICE_KEY", "test-service-key")
+
+	restore := mockOpenAITransport(t, func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/conversations":
+			return jsonHTTPResponse(http.StatusOK, map[string]string{"id": "conv-1"}), nil
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/responses":
+			return jsonHTTPResponse(http.StatusTooManyRequests, map[string]any{
+				"error": map[string]string{
+					"code":    "insufficient_quota",
+					"message": "You exceeded your current quota",
+				},
+			}), nil
+		default:
+			t.Fatalf("unexpected OpenAI request: %s %s", req.Method, req.URL.Path)
+			return nil, nil
+		}
+	})
+	defer restore()
+
+	body := bytes.NewBufferString(`{"user_message":"Say hi","session_id":"00000000-0000-0000-0000-000000000001"}`)
+	req := newAuthedRequest(t, http.MethodPost, "/api/chat", body, testUserHash)
+	rec := httptest.NewRecorder()
+
+	HandleChat(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d", rec.Code)
+	}
+
+	var payload apiErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.Error.Code != "quota_exceeded" {
+		t.Fatalf("expected quota_exceeded, got %+v", payload.Error)
+	}
+}
+
+func TestApplicationHandleAuth_InvalidAPIKeyValidationReturnsStructuredError(t *testing.T) {
+	app := NewApplication(Dependencies{
+		Auth:         service.NewAuthService(),
+		KeyValidator: fakeKeyValidator{err: domain.ErrInvalidAPIKey},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth", bytes.NewBufferString(`{"api_key":"`+testAPIKey+`"}`))
+	rec := httptest.NewRecorder()
+
+	app.HandleAuth(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+
+	var payload apiErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if payload.Error.Code != "invalid_api_key" {
+		t.Fatalf("expected invalid_api_key, got %+v", payload.Error)
 	}
 }
 
@@ -517,4 +652,12 @@ func leftPad(n int) string {
 		n /= 10
 	}
 	return string(digits)
+}
+
+type fakeKeyValidator struct {
+	err error
+}
+
+func (f fakeKeyValidator) ValidateAPIKey(context.Context, string) error {
+	return f.err
 }

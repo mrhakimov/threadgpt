@@ -89,23 +89,27 @@ func decodeJSON(r *http.Request, dest any) error {
 	return json.NewDecoder(r.Body).Decode(dest)
 }
 
-func writeServiceError(w http.ResponseWriter, err error) {
-	switch err {
-	case nil:
-		return
-	case domain.ErrInvalidArgument:
-		http.Error(w, "invalid request", http.StatusBadRequest)
-	case domain.ErrUnauthorized:
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	case domain.ErrForbidden:
-		http.Error(w, "forbidden", http.StatusForbidden)
-	case domain.ErrNotFound:
-		http.Error(w, "not found", http.StatusNotFound)
-	case domain.ErrRateLimited:
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
-	default:
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+type apiErrorResponse struct {
+	Error domain.ErrorDescriptor `json:"error"`
+}
+
+func newAPIError(status int, code, message string) domain.ErrorDescriptor {
+	return domain.ErrorDescriptor{
+		Code:    code,
+		Message: message,
+		Status:  status,
 	}
+}
+
+func writeAPIError(w http.ResponseWriter, detail domain.ErrorDescriptor) {
+	writeJSON(w, detail.Status, apiErrorResponse{Error: detail})
+}
+
+func writeServiceError(w http.ResponseWriter, err error) {
+	if err == nil {
+		return
+	}
+	writeAPIError(w, domain.DescribeError(err))
 }
 
 type sseStreamWriter struct {
@@ -144,6 +148,15 @@ func (s *sseStreamWriter) Start(sessionID string) error {
 
 func (s *sseStreamWriter) WriteChunk(chunk string) error {
 	payload, _ := json.Marshal(map[string]string{"chunk": chunk})
+	_, _ = fmt.Fprintf(s.writer, "data: %s\n\n", payload)
+	if s.flusher != nil {
+		s.flusher.Flush()
+	}
+	return nil
+}
+
+func (s *sseStreamWriter) WriteError(detail domain.ErrorDescriptor) error {
+	payload, _ := json.Marshal(apiErrorResponse{Error: detail})
 	_, _ = fmt.Fprintf(s.writer, "data: %s\n\n", payload)
 	if s.flusher != nil {
 		s.flusher.Flush()

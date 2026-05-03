@@ -1,4 +1,4 @@
-import { toErrorMessage } from "@/domain/errors"
+import { ApiError, getApiErrorPayload, toErrorMessage } from "@/domain/errors"
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -6,23 +6,7 @@ export const API_URL =
 export const JSON_HEADERS = { "Content-Type": "application/json" }
 
 export async function handleResponseError(response: Response): Promise<never> {
-  if (response.status >= 500) {
-    throw new Error("Server error, please try again.")
-  }
-
-  if (response.status === 401 || response.status === 403) {
-    throw new Error("Unauthorized. Please re-enter your API key.")
-  }
-
-  if (response.status === 404) {
-    throw new Error("Not found.")
-  }
-
-  if (response.status === 429) {
-    throw new Error("Too many requests. Please wait a moment.")
-  }
-
-  throw new Error("Something went wrong.")
+  throw await buildResponseError(response)
 }
 
 export async function requestJson<T>(
@@ -99,19 +83,71 @@ async function consumeStream(
         return resolvedSessionId
       }
 
+      let parsed: unknown
       try {
-        const parsed = JSON.parse(data)
-        if (parsed.session_id) {
-          resolvedSessionId = parsed.session_id
-        }
-        if (parsed.chunk) {
-          onChunk(parsed.chunk)
-        }
+        parsed = JSON.parse(data)
       } catch {
         // Ignore malformed chunks and keep the stream alive.
+        continue
+      }
+
+      const apiError = getApiErrorPayload(parsed)
+      if (apiError) {
+        throw new ApiError(apiError.message, {
+          code: apiError.code,
+          status: apiError.status,
+        })
+      }
+      if (typeof parsed === "object" && parsed !== null && "session_id" in parsed) {
+        const sessionId = parsed.session_id
+        if (typeof sessionId === "string" && sessionId) {
+          resolvedSessionId = sessionId
+        }
+      }
+      if (typeof parsed === "object" && parsed !== null && "chunk" in parsed) {
+        const chunk = parsed.chunk
+        if (typeof chunk === "string" && chunk) {
+          onChunk(chunk)
+        }
       }
     }
   }
 
   return resolvedSessionId
+}
+
+async function buildResponseError(response: Response): Promise<ApiError> {
+  const payload = await response.clone().json().catch(() => null)
+  const apiError = getApiErrorPayload(payload)
+  if (apiError) {
+    return new ApiError(apiError.message, {
+      code: apiError.code,
+      status: apiError.status ?? response.status,
+    })
+  }
+
+  const text = (await response.text().catch(() => "")).trim()
+  if (text) {
+    return new ApiError(text, { status: response.status })
+  }
+
+  return new ApiError(defaultErrorMessage(response.status), {
+    status: response.status,
+  })
+}
+
+function defaultErrorMessage(status: number): string {
+  if (status >= 500) {
+    return "Something went wrong on the server. Please try again."
+  }
+  if (status === 401 || status === 403) {
+    return "Please sign in again."
+  }
+  if (status === 404) {
+    return "That resource was not found."
+  }
+  if (status === 429) {
+    return "Too many requests. Please wait a moment and try again."
+  }
+  return "Something went wrong."
 }

@@ -18,22 +18,22 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) HandleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	var req ChatRequest
 	if err := decodeJSON(r, &req); err != nil || req.UserMessage == "" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_request", "The request body was invalid."))
 		return
 	}
 	if len(req.UserMessage) > 32*1024 {
-		http.Error(w, "message too long", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "message_too_long", "Messages must be 32 KB or smaller."))
 		return
 	}
 	if req.SessionID != "" && !isValidUUID(req.SessionID) {
-		http.Error(w, "invalid session id", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_session_id", "The session ID was invalid."))
 		return
 	}
 

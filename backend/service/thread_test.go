@@ -10,8 +10,8 @@ import (
 func TestThreadServiceReply_ContinuesAfterClientDisconnect(t *testing.T) {
 	sessionRepo := &stubSessionRepository{
 		session: &domain.Session{
-			ID:          "session-1",
-			APIKeyHash:  "hash-1",
+			ID:           "session-1",
+			APIKeyHash:   "hash-1",
 			SystemPrompt: stringPtr("Be helpful"),
 		},
 	}
@@ -24,7 +24,10 @@ func TestThreadServiceReply_ContinuesAfterClientDisconnect(t *testing.T) {
 		},
 	}
 	assistant := &stubAssistantClient{
-		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage string, _ repository.StreamWriter) error {
+		runAndStreamFunc: func(ctx context.Context, _ string, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
+			if err := stream.Start(sessionID); err != nil {
+				return err
+			}
 			if err := ctx.Err(); err != nil {
 				t.Fatalf("expected detached context during stream, got %v", err)
 			}
@@ -55,8 +58,8 @@ func TestThreadServiceReply_ContinuesAfterClientDisconnect(t *testing.T) {
 func TestThreadServiceGet_ExcludesInitialExchangeAndPaginatesNewestFirst(t *testing.T) {
 	sessionRepo := &stubSessionRepository{
 		session: &domain.Session{
-			ID:          "session-1",
-			APIKeyHash:  "hash-1",
+			ID:           "session-1",
+			APIKeyHash:   "hash-1",
 			SystemPrompt: stringPtr("Be helpful"),
 		},
 	}
@@ -182,7 +185,7 @@ func (r *stubConversationRepository) ListBySessionAsc(context.Context, string) (
 type stubAssistantClient struct {
 	createConversationID   string
 	createConversationFunc func(context.Context, string, string) (string, error)
-	runAndStreamFunc       func(context.Context, string, string, string, repository.StreamWriter) error
+	runAndStreamFunc       func(context.Context, string, string, string, string, repository.StreamWriter) error
 	listMessages           []domain.Message
 	deletedConversationIDs []string
 }
@@ -201,9 +204,12 @@ func (a *stubAssistantClient) ListMessages(context.Context, string, string) ([]d
 	return append([]domain.Message(nil), a.listMessages...), nil
 }
 
-func (a *stubAssistantClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage string, stream repository.StreamWriter) error {
+func (a *stubAssistantClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID string, stream repository.StreamWriter) error {
 	if a.runAndStreamFunc != nil {
-		return a.runAndStreamFunc(ctx, apiKey, conversationID, userMessage, stream)
+		return a.runAndStreamFunc(ctx, apiKey, conversationID, userMessage, sessionID, stream)
+	}
+	if err := stream.Start(sessionID); err != nil {
+		return err
 	}
 	return nil
 }
@@ -217,7 +223,10 @@ type stubStreamWriter struct{}
 
 func (s *stubStreamWriter) Start(string) error      { return nil }
 func (s *stubStreamWriter) WriteChunk(string) error { return nil }
-func (s *stubStreamWriter) Close() error            { return nil }
+func (s *stubStreamWriter) WriteError(domain.ErrorDescriptor) error {
+	return nil
+}
+func (s *stubStreamWriter) Close() error { return nil }
 
 type cancelOnStartStreamWriter struct {
 	cancel func()
@@ -231,7 +240,10 @@ func (s *cancelOnStartStreamWriter) Start(string) error {
 }
 
 func (s *cancelOnStartStreamWriter) WriteChunk(string) error { return nil }
-func (s *cancelOnStartStreamWriter) Close() error            { return nil }
+func (s *cancelOnStartStreamWriter) WriteError(domain.ErrorDescriptor) error {
+	return nil
+}
+func (s *cancelOnStartStreamWriter) Close() error { return nil }
 
 func stringPtr(value string) *string {
 	return &value

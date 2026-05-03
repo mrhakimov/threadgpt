@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"threadgpt/domain"
 )
 
 func TestOpenAIClient_RunAndStreamHandlesLargeChunks(t *testing.T) {
@@ -36,24 +37,112 @@ func TestOpenAIClient_RunAndStreamHandlesLargeChunks(t *testing.T) {
 	client := NewOpenAIClient()
 	stream := &recordingStreamWriter{}
 
-	if err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", stream); err != nil {
+	if err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", "session-1", stream); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !stream.started {
+		t.Fatalf("expected stream to start")
 	}
 	if stream.output.String() != strings.Repeat("a", 70*1024) {
 		t.Fatalf("expected full chunk to be streamed, got %d bytes", len(stream.output.String()))
 	}
 }
 
+func TestOpenAIClient_ValidateAPIKeyMapsProviderErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantErr    error
+	}{
+		{
+			name:       "invalid api key",
+			statusCode: http.StatusUnauthorized,
+			body:       `{"error":{"code":"invalid_api_key","message":"Incorrect API key provided"}}`,
+			wantErr:    domain.ErrInvalidAPIKey,
+		},
+		{
+			name:       "quota exceeded",
+			statusCode: http.StatusTooManyRequests,
+			body:       `{"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}`,
+			wantErr:    domain.ErrQuotaExceeded,
+		},
+		{
+			name:       "provider unavailable",
+			statusCode: http.StatusServiceUnavailable,
+			body:       `{"error":{"message":"server busy"}}`,
+			wantErr:    domain.ErrProviderUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restore := mockOpenAITransport(func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodGet || req.URL.Path != "/v1/models" {
+					t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+				}
+				return &http.Response{
+					StatusCode: tt.statusCode,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(tt.body)),
+				}, nil
+			})
+			defer restore()
+
+			client := NewOpenAIClient()
+			err := client.ValidateAPIKey(context.Background(), "sk-test")
+			if err != tt.wantErr {
+				t.Fatalf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestOpenAIClient_RunAndStreamDoesNotStartStreamOnProviderError(t *testing.T) {
+	restore := mockOpenAITransport(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodPost || req.URL.Path != "/v1/responses" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}`,
+			)),
+		}, nil
+	})
+	defer restore()
+
+	client := NewOpenAIClient()
+	stream := &recordingStreamWriter{}
+
+	err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", "session-1", stream)
+	if err != domain.ErrQuotaExceeded {
+		t.Fatalf("expected quota exceeded, got %v", err)
+	}
+	if stream.started {
+		t.Fatalf("expected stream to stay unopened")
+	}
+}
+
 type recordingStreamWriter struct {
-	output strings.Builder
+	output  strings.Builder
+	started bool
+	errors  []domain.ErrorDescriptor
 }
 
 func (w *recordingStreamWriter) Start(string) error {
+	w.started = true
 	return nil
 }
 
 func (w *recordingStreamWriter) WriteChunk(chunk string) error {
 	w.output.WriteString(chunk)
+	return nil
+}
+
+func (w *recordingStreamWriter) WriteError(detail domain.ErrorDescriptor) error {
+	w.errors = append(w.errors, detail)
 	return nil
 }
 

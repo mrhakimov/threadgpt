@@ -23,7 +23,7 @@ func (a *Application) HandleSessions(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		a.handleCreateNamedSession(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 	}
 }
 
@@ -72,7 +72,7 @@ func (a *Application) handleCreateNamedSession(w http.ResponseWriter, r *http.Re
 	r.Body = http.MaxBytesReader(w, r.Body, 1*1024)
 	var req CreateSessionRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_request", "The request body was invalid."))
 		return
 	}
 
@@ -81,7 +81,7 @@ func (a *Application) handleCreateNamedSession(w http.ResponseWriter, r *http.Re
 		name = "New conversation"
 	}
 	if len(name) > 256 {
-		http.Error(w, "name too long", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "name_too_long", "Conversation names must be 256 characters or fewer."))
 		return
 	}
 
@@ -105,11 +105,11 @@ func HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 func (a *Application) HandleSessionByID(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Path[len("/api/sessions/"):]
 	if sessionID == "" {
-		http.Error(w, "session id required", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "missing_session_id", "A session ID is required."))
 		return
 	}
 	if !isValidUUID(sessionID) {
-		http.Error(w, "invalid session id", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_session_id", "The session ID was invalid."))
 		return
 	}
 
@@ -136,19 +136,19 @@ func (a *Application) HandleSessionByID(w http.ResponseWriter, r *http.Request) 
 			SystemPrompt string `json:"system_prompt"`
 		}
 		if err := decodeJSON(r, &req); err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
+			writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_request", "The request body was invalid."))
 			return
 		}
 		if req.Name == "" && req.SystemPrompt == "" {
-			http.Error(w, "invalid request", http.StatusBadRequest)
+			writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_request", "At least one field must be updated."))
 			return
 		}
 		if len(req.Name) > 256 {
-			http.Error(w, "name too long", http.StatusBadRequest)
+			writeAPIError(w, newAPIError(http.StatusBadRequest, "name_too_long", "Conversation names must be 256 characters or fewer."))
 			return
 		}
 		if len(req.SystemPrompt) > 64*1024 {
-			http.Error(w, "system prompt too long", http.StatusBadRequest)
+			writeAPIError(w, newAPIError(http.StatusBadRequest, "system_prompt_too_long", "System prompts must be 64 KB or smaller."))
 			return
 		}
 
@@ -166,7 +166,7 @@ func (a *Application) HandleSessionByID(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 	}
 }
 
@@ -176,7 +176,7 @@ func HandleSession(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) HandleSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 

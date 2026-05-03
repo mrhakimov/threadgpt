@@ -62,13 +62,13 @@ func HandleAuth(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) HandleAuth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 
 	ip := remoteIP(r)
 	if !a.auth.AllowAuth(ip) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		writeServiceError(w, domain.ErrRateLimited)
 		return
 	}
 
@@ -77,28 +77,24 @@ func (a *Application) HandleAuth(w http.ResponseWriter, r *http.Request) {
 		APIKey string `json:"api_key"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_request", "The request body was invalid."))
 		return
 	}
 	if len(req.APIKey) < 20 || !strings.HasPrefix(req.APIKey, "sk-") {
-		http.Error(w, "invalid api key", http.StatusBadRequest)
+		writeAPIError(w, newAPIError(http.StatusBadRequest, "invalid_api_key", "That API key doesn't look valid. It should start with sk-."))
 		return
 	}
 
 	if a.keyValidator != nil {
 		if err := a.keyValidator.ValidateAPIKey(r.Context(), req.APIKey); err != nil {
-			if err == domain.ErrUnauthorized {
-				http.Error(w, "invalid or expired api key", http.StatusUnauthorized)
-				return
-			}
-			http.Error(w, "failed to validate api key", http.StatusBadGateway)
+			writeServiceError(w, err)
 			return
 		}
 	}
 
 	token, err := a.auth.Login(req.APIKey)
 	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		writeServiceError(w, domain.ErrInternal)
 		return
 	}
 
@@ -128,19 +124,19 @@ func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 
 	ip := remoteIP(r)
 	if !a.auth.AllowChat(ip) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		writeServiceError(w, domain.ErrRateLimited)
 		return
 	}
 
 	token := tokenFromRequest(r)
 	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeServiceError(w, domain.ErrUnauthorized)
 		return
 	}
 	if err := a.auth.Check(token); err != nil {
@@ -158,13 +154,13 @@ func HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) HandleAuthInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 
 	token := tokenFromRequest(r)
 	if token == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeServiceError(w, domain.ErrUnauthorized)
 		return
 	}
 
@@ -184,13 +180,13 @@ func HandleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, newAPIError(http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed."))
 		return
 	}
 
 	ip := remoteIP(r)
 	if !a.auth.AllowChat(ip) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		writeServiceError(w, domain.ErrRateLimited)
 		return
 	}
 
@@ -217,7 +213,7 @@ func (a *Application) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := tokenFromRequest(r)
 		if token == "" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			writeServiceError(w, domain.ErrUnauthorized)
 			return
 		}
 
