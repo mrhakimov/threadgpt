@@ -47,7 +47,7 @@ final class SettingsViewModel: ObservableObject {
             let response: ModelsResponse = try await api.request(method: "GET", path: "/api/models")
             models = response.models.sorted()
             if selectedModel.isEmpty, !models.isEmpty {
-                selectModel(models.first(where: { $0 == "gpt-4o" }) ?? models[0])
+                selectModel(models[0])
             }
         } catch {}
         isLoadingModels = false
