@@ -17,6 +17,18 @@ import (
 
 const openAIBaseURL = "https://api.openai.com/v1"
 
+const defaultModel = "gpt-5.4-nano"
+
+var preferredTextModels = []string{
+	defaultModel,
+	"gpt-5.5",
+	"gpt-5.5-pro",
+	"gpt-5.4",
+	"gpt-5.4-pro",
+	"gpt-5.4-mini",
+	"gpt-5.4-nano",
+}
+
 type OpenAIClient struct {
 	client       *http.Client
 	streamClient *http.Client
@@ -64,9 +76,16 @@ func (c *OpenAIClient) ListModels(ctx context.Context, apiKey string) ([]string,
 	if err := c.doRequest(ctx, apiKey, http.MethodGet, "/models", nil, &result); err != nil {
 		return nil, err
 	}
-	models := make([]string, len(result.Data))
-	for i, m := range result.Data {
-		models[i] = m.ID
+	available := make(map[string]struct{}, len(result.Data))
+	for _, m := range result.Data {
+		available[m.ID] = struct{}{}
+	}
+
+	models := make([]string, 0, len(preferredTextModels))
+	for _, model := range preferredTextModels {
+		if _, ok := available[model]; ok {
+			models = append(models, model)
+		}
 	}
 	return models, nil
 }
@@ -136,8 +155,6 @@ func (c *OpenAIClient) ListMessages(ctx context.Context, apiKey, conversationID 
 
 	return messages, nil
 }
-
-const defaultModel = "gpt-4o"
 
 func (c *OpenAIClient) RunAndStream(ctx context.Context, apiKey, conversationID, userMessage, sessionID, model string, stream repository.StreamWriter) error {
 	if model == "" {

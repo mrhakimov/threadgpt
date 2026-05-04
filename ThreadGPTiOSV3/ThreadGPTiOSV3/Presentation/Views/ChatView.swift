@@ -148,12 +148,12 @@ struct ChatView: View {
                     .font(.headline)
                     .foregroundColor(.tgptForeground)
 
-                if let name = chatVM.conversationName {
-                    Text(name)
-                        .font(.caption)
-                        .foregroundColor(.tgptMutedForeground)
-                        .lineLimit(1)
-                }
+                Text(chatVM.conversationName ?? "Conversation")
+                    .font(.caption)
+                    .foregroundColor(.tgptMutedForeground)
+                    .lineLimit(1)
+                    .opacity(chatVM.conversationName == nil ? 0 : 1)
+                    .accessibilityHidden(chatVM.conversationName == nil)
             }
 
             Spacer()

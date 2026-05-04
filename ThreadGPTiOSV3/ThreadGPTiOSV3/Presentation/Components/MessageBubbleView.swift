@@ -143,11 +143,20 @@ struct MessageBubbleView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isSavingSystemPrompt ? "Saving" : "Save") {
+                    Button {
                         Task { await saveSystemPrompt() }
+                    } label: {
+                        if isSavingSystemPrompt {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.tgptForeground)
+                        } else {
+                            Text("Save")
+                        }
                     }
                     .foregroundColor(.tgptForeground)
                     .disabled(isSavingSystemPrompt || systemPromptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityLabel(isSavingSystemPrompt ? "Saving" : "Save")
                 }
             }
         }

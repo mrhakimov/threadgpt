@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"threadgpt/domain"
@@ -45,6 +46,72 @@ func TestOpenAIClient_RunAndStreamHandlesLargeChunks(t *testing.T) {
 	}
 	if stream.output.String() != strings.Repeat("a", 70*1024) {
 		t.Fatalf("expected full chunk to be streamed, got %d bytes", len(stream.output.String()))
+	}
+}
+
+func TestOpenAIClient_ListModelsReturnsPreferredTextModels(t *testing.T) {
+	restore := mockOpenAITransport(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet || req.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+
+		return jsonHTTPResponse(http.StatusOK, map[string]any{
+			"data": []map[string]string{
+				{"id": "tts-1"},
+				{"id": "gpt-4o"},
+				{"id": "gpt-5.4-mini"},
+				{"id": "gpt-image-2"},
+				{"id": "gpt-5.5-2026-04-20"},
+				{"id": "gpt-5.5"},
+				{"id": "text-embedding-3-small"},
+				{"id": "gpt-5.4-nano"},
+				{"id": "omni-moderation-latest"},
+			},
+		}), nil
+	})
+	defer restore()
+
+	client := NewOpenAIClient()
+	models, err := client.ListModels(context.Background(), "sk-test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"gpt-5.5", "gpt-5.4-mini", "gpt-5.4-nano"}
+	if !reflect.DeepEqual(models, want) {
+		t.Fatalf("expected %v, got %v", want, models)
+	}
+}
+
+func TestOpenAIClient_RunAndStreamUsesCurrentDefaultModel(t *testing.T) {
+	restore := mockOpenAITransport(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodPost || req.URL.Path != "/v1/responses" {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+
+		var payload struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			t.Fatalf("failed to decode request payload: %v", err)
+		}
+		if payload.Model != "gpt-5.5" {
+			t.Fatalf("expected default model gpt-5.5, got %q", payload.Model)
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+		}, nil
+	})
+	defer restore()
+
+	client := NewOpenAIClient()
+	stream := &recordingStreamWriter{}
+
+	if err := client.RunAndStream(context.Background(), "sk-test", "conv-1", "Hello", "session-1", "", stream); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -160,6 +227,18 @@ func mockOpenAITransport(fn func(*http.Request) (*http.Response, error)) func() 
 	})
 	return func() {
 		http.DefaultTransport = original
+	}
+}
+
+func jsonHTTPResponse(status int, body any) *http.Response {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		panic(err)
+	}
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(string(payload))),
 	}
 }
 
